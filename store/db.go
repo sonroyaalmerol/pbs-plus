@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -112,14 +110,7 @@ func (store *Store) GetJob(id string) (*Job, error) {
 		}
 
 		if task.Status == "stopped" {
-			idSplit := strings.Split(task.WID, "/")
-			endTimeHex := idSplit[len(idSplit)-1]
-			endTime, err := strconv.ParseInt(endTimeHex, 16, 64)
-			if err != nil {
-				endTime = time.Now().Unix()
-			}
-
-			job.LastRunEndtime = &endTime
+			job.LastRunEndtime = &task.EndTime
 			job.LastRunState = &task.ExitStatus
 
 			tmpDuration := task.EndTime - task.StartTime
@@ -211,14 +202,7 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 			}
 
 			if task.Status == "stopped" {
-				idSplit := strings.Split(task.WID, "/")
-				endTimeHex := idSplit[len(idSplit)-1]
-				endTime, err := strconv.ParseInt(endTimeHex, 16, 64)
-				if err != nil {
-					endTime = time.Now().Unix()
-				}
-
-				job.LastRunEndtime = &endTime
+				job.LastRunEndtime = &task.EndTime
 				job.LastRunState = &task.ExitStatus
 
 				tmpDuration := task.EndTime - task.StartTime

@@ -122,5 +122,73 @@ func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
 		return nil, err
 	}
 
+	endTime, err := GetTaskEndTime(&taskStruct.Data, r)
+	if err != nil {
+		return nil, err
+	}
+
+	taskStruct.Data.EndTime = endTime
+
 	return &taskStruct.Data, nil
+}
+
+func GetTaskEndTime(task *Task, r *http.Request) (int64, error) {
+	nextPage := true
+	var tasksStruct TasksResponse
+
+	page := 1
+	for nextPage {
+		start := (page - 1) * 50
+		tasksReq, err := http.NewRequest(
+			http.MethodGet,
+			fmt.Sprintf(
+				"%s/api2/json/nodes/localhost/tasks?typefilter=backup&running=false&start=%d&since=%d",
+				ProxyTargetURL,
+				start,
+				task.StartTime,
+			),
+			nil,
+		)
+		tasksReq.Header.Set("Csrfpreventiontoken", r.Header.Get("Csrfpreventiontoken"))
+		tasksReq.Header.Set("User-Agent", r.Header.Get("User-Agent"))
+
+		for _, cookie := range r.Cookies() {
+			tasksReq.AddCookie(cookie)
+		}
+
+		client := http.Client{
+			Timeout: time.Second * 10,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		}
+
+		tasksResp, err := client.Do(tasksReq)
+		if err != nil {
+			return -1, err
+		}
+
+		tasksBody, err := io.ReadAll(tasksResp.Body)
+		if err != nil {
+			return -1, err
+		}
+
+		err = json.Unmarshal(tasksBody, &tasksStruct)
+		if err != nil {
+			fmt.Println(tasksBody)
+			return -1, err
+		}
+
+		for _, taskStruct := range tasksStruct.Data {
+			if taskStruct.UPID == task.UPID {
+				return taskStruct.EndTime, nil
+			}
+		}
+
+		if tasksStruct.Total <= page*50 {
+			nextPage = false
+		}
+	}
+
+	return nil, fmt.Errorf("error getting tasks: not found")
 }
