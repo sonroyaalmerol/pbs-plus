@@ -1,10 +1,9 @@
-package controllers
+package main
 
 import (
 	"bytes"
 	"compress/flate"
 	"crypto/tls"
-	"embed"
 	"io"
 	"net/http"
 	"net/http/httputil"
@@ -12,11 +11,10 @@ import (
 	"strings"
 
 	"sgl.com/pbs-ui/store"
-	"sgl.com/pbs-ui/views"
 )
 
 // createProxy creates a reverse proxy with a transport that allows response modification.
-func CreateProxy(target *url.URL, jsFs *embed.FS) *httputil.ReverseProxy {
+func createProxy(target *url.URL) *httputil.ReverseProxy {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	originalDirector := proxy.Director
 
@@ -45,7 +43,7 @@ func CreateProxy(target *url.URL, jsFs *embed.FS) *httputil.ReverseProxy {
 			resp.Body.Close()
 
 			modifiedContent := append(body, []byte("\n// Modified by proxy\n")...)
-			modifiedContent = append(modifiedContent, views.CompileCustomJS(jsFs)...)
+			modifiedContent = append(modifiedContent, compileCustomJS()...)
 
 			// Update response body without setting Content-Length
 			resp.Body = io.NopCloser(bytes.NewReader(modifiedContent))

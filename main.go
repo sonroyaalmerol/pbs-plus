@@ -6,13 +6,12 @@ import (
 	"net/http"
 	"net/url"
 
-	"sgl.com/pbs-ui/controllers"
 	"sgl.com/pbs-ui/controllers/jobs"
 	"sgl.com/pbs-ui/controllers/targets"
 	"sgl.com/pbs-ui/store"
 )
 
-//go:embed all:views/js
+//go:embed all:views
 var customJsFS embed.FS
 
 func main() {
@@ -23,7 +22,7 @@ func main() {
 		log.Fatalf("Failed to parse target URL: %v", err)
 	}
 
-	proxy := controllers.CreateProxy(targetURL, &customJsFS)
+	proxy := createProxy(targetURL)
 
 	storeInstance, err := store.Initialize()
 	if err != nil {

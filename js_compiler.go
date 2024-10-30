@@ -1,15 +1,15 @@
-package views
+package main
 
 import (
-	"embed"
 	"io/fs"
+	"log"
 	"os"
 )
 
-func CompileCustomJS(customJsFS *embed.FS) []byte {
+func compileCustomJS() []byte {
 	var result []byte
 
-	fs.WalkDir(customJsFS, ".", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(customJsFS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -28,6 +28,10 @@ func CompileCustomJS(customJsFS *embed.FS) []byte {
 
 		return nil
 	})
+
+	if err != nil {
+		log.Println(err)
+	}
 
 	return result
 }
