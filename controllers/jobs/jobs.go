@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -83,6 +84,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			"--exclude=\"System Volume Information\"",
 			"--exclude=\"\\$RECYCLE.BIN\"",
 		)
+		cmd.Env = os.Environ()
 		cmd.Stdout = cmdBuffer
 		cmd.Stderr = cmdBuffer
 
