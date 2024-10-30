@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -44,7 +45,7 @@ func D2DJobHandler(storeInstance *store.Store) func(http.ResponseWriter, *http.R
 
 func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		response := JobConfigResponse{}
+		response := JobRunResponse{}
 		if r.Method != http.MethodPost {
 			http.Error(w, "Invalid HTTP method", http.StatusBadRequest)
 		}
@@ -58,6 +59,8 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			return
 		}
 
+		fmt.Printf("Job started: %s\n", job.ID)
+
 		target, err := storeInstance.GetTarget(job.Target)
 		if err != nil {
 			response.Message = err.Error()
@@ -67,9 +70,11 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			return
 		}
 
+		fmt.Printf("Target found: %s\n", target.Name)
+
 		cmdBuffer := new(bytes.Buffer)
 		cmd := exec.Command(
-			"proxmox-backup-client",
+			"/usr/bin/proxmox-backup-client",
 			"backup",
 			fmt.Sprintf("%s.pxar:%s", strings.ReplaceAll(job.Target, " ", "-"), target.Path),
 			"--repository",
@@ -81,6 +86,8 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 		cmd.Stdout = cmdBuffer
 		cmd.Stderr = cmdBuffer
 
+		fmt.Printf("Command composed: %s\n", cmd.String())
+
 		err = cmd.Start()
 		if err != nil {
 			response.Message = err.Error()
@@ -91,36 +98,42 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 		}
 
 		task := logging.Initialize(cmd.Process.Pid, job.Target, "", "")
-		log, err := task.GetLogger()
-		if err != nil {
-			response.Message = err.Error()
-			response.Status = http.StatusBadGateway
-			response.Success = false
-			json.NewEncoder(w).Encode(response)
-			return
-		}
+		fmt.Printf("Task initialized: %s\n", task.UPID)
 
 		job.LastRunUpid = &task.UPID
 		job.LastRunState = &task.Status
+
+		response.Data = task.UPID
 
 		err = storeInstance.UpdateJob(*job)
 		if err != nil {
 			fmt.Printf("error updating job: %v\n", err)
 		}
+		fmt.Printf("Updated job: %s\n", job.ID)
 
 		go func() {
+			fmt.Printf("Logger buffer to log writer goroutine started\n")
+			log, err := task.GetLogger()
+			if err != nil {
+				fmt.Printf("%s\n", err)
+				return
+			}
+
 			writer := log.Writer()
-			_, err := io.Copy(writer, cmdBuffer)
+			_, err = io.Copy(writer, cmdBuffer)
 			if err != nil {
 				fmt.Printf("log writer err: %v\n", err)
 			}
 		}()
 
 		go func() {
+			fmt.Printf("cmd wait goroutine started\n")
 			err = cmd.Wait()
 			if err != nil {
 				log.Printf("%s\n", err)
 			}
+
+			fmt.Printf("done waiting, closing task\n")
 
 			err = task.Close()
 			if err != nil {
@@ -132,6 +145,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			job.LastRunState = &task.Status
 			job.LastRunEndtime = &endTimeUnix
 
+			fmt.Printf("Updated job: %s\n", job.ID)
 			err = storeInstance.UpdateJob(*job)
 			if err != nil {
 				fmt.Printf("error updating job: %v\n", err)

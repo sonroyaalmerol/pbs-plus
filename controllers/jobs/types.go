@@ -14,3 +14,11 @@ type JobConfigResponse struct {
 	Status  int               `json:"status"`
 	Success bool              `json:"success"`
 }
+
+type JobRunResponse struct {
+	Errors  map[string]string `json:"errors"`
+	Message string            `json:"message"`
+	Data    string            `json:"data"`
+	Status  int               `json:"status"`
+	Success bool              `json:"success"`
+}

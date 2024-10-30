@@ -90,7 +90,7 @@ func (task *Task) Close() error {
 
 	activePath := filepath.Join(task.BaseDir, "active")
 
-	cmd := exec.Command("sed", "-i", fmt.Sprintf("/%s/d", task.UPID), activePath)
+	cmd := exec.Command("/usr/bin/sed", "-i", fmt.Sprintf("/%s/d", task.UPID), activePath)
 	_, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to update active: %w", err)
