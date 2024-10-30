@@ -190,5 +190,5 @@ func GetTaskEndTime(task *Task, r *http.Request) (int64, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("error getting tasks: not found")
+	return -1, fmt.Errorf("error getting tasks: not found")
 }
