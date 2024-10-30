@@ -219,6 +219,7 @@ func ExtJsJobHandler(storeInstance *store.Store) func(http.ResponseWriter, *http
 			Target:           r.FormValue("target"),
 			Schedule:         r.FormValue("schedule"),
 			Comment:          r.FormValue("comment"),
+			Namespace:        r.FormValue("namespace"),
 			NotificationMode: r.FormValue("notification-mode"),
 		}
 
@@ -280,6 +281,9 @@ func ExtJsJobSingleHandler(storeInstance *store.Store) func(http.ResponseWriter,
 			if r.FormValue("comment") != "" {
 				job.Comment = r.FormValue("comment")
 			}
+			if r.FormValue("namespace") != "" {
+				job.Namespace = r.FormValue("namespace")
+			}
 			if r.FormValue("notification-mode") != "" {
 				job.NotificationMode = r.FormValue("notification-mode")
 			}
@@ -295,6 +299,8 @@ func ExtJsJobSingleHandler(storeInstance *store.Store) func(http.ResponseWriter,
 						job.Schedule = ""
 					case "comment":
 						job.Comment = ""
+					case "namespace":
+						job.Namespace = ""
 					case "notification-mode":
 						job.NotificationMode = ""
 					}
