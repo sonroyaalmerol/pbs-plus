@@ -2,37 +2,32 @@ package views
 
 import (
 	"embed"
-	"log"
+	"io/fs"
 	"os"
-	"path/filepath"
 )
 
-func CompileCustomJS(customJsFS *embed.FS, basePath string) []byte {
+func CompileCustomJS(customJsFS *embed.FS) []byte {
 	var result []byte
 
-	if basePath == "" {
-		basePath = "."
-	}
-
-	files, err := customJsFS.ReadDir(basePath)
-	if err != nil {
-		log.Fatalf("failed to read directory: %v", err)
-	}
-
-	for _, file := range files {
-		filePath := filepath.Join(basePath, file.Name())
-		if !file.IsDir() {
-			content, err := os.ReadFile(filePath)
-			if err != nil {
-				log.Printf("failed to read file %s: %v", filePath, err)
-				continue
-			}
-			result = append(result, content...)
-			result = append(result, []byte("\n")...)
-		} else {
-			result = append(result, CompileCustomJS(customJsFS, filePath)...)
+	fs.WalkDir(customJsFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-	}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		result = append(result, content...)
+		result = append(result, []byte("\n")...)
+
+		return nil
+	})
 
 	return result
 }

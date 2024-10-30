@@ -45,7 +45,7 @@ func CreateProxy(target *url.URL, jsFs *embed.FS) *httputil.ReverseProxy {
 			resp.Body.Close()
 
 			modifiedContent := append(body, []byte("\n// Modified by proxy\n")...)
-			modifiedContent = append(modifiedContent, views.CompileCustomJS(jsFs, "")...)
+			modifiedContent = append(modifiedContent, views.CompileCustomJS(jsFs)...)
 
 			// Update response body without setting Content-Length
 			resp.Body = io.NopCloser(bytes.NewReader(modifiedContent))
