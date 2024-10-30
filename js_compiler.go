@@ -3,7 +3,6 @@ package main
 import (
 	"io/fs"
 	"log"
-	"os"
 )
 
 func compileCustomJS() []byte {
@@ -18,7 +17,7 @@ func compileCustomJS() []byte {
 			return nil
 		}
 
-		content, err := os.ReadFile(path)
+		content, err := customJsFS.ReadFile(path)
 		if err != nil {
 			return err
 		}
