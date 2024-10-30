@@ -1,13 +1,16 @@
 package jobs
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"sgl.com/pbs-ui/store"
 	"sgl.com/pbs-ui/utils"
@@ -83,8 +86,12 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			"$RECYCLE.BIN",
 		)
 		cmd.Env = os.Environ()
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+
+		logBuffer := bytes.Buffer{}
+		writer := io.MultiWriter(os.Stdout, &logBuffer)
+
+		cmd.Stdout = writer
+		cmd.Stderr = writer
 
 		fmt.Printf("Command composed: %s\n", cmd.String())
 
@@ -95,6 +102,23 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			response.Success = false
 			json.NewEncoder(w).Encode(response)
 			return
+		}
+
+		for {
+			line, err := logBuffer.ReadString('\n')
+			if err != nil && line != "" {
+				response.Message = err.Error()
+				response.Status = http.StatusBadGateway
+				response.Success = false
+				json.NewEncoder(w).Encode(response)
+				return
+			}
+
+			if strings.Contains(line, "Starting backup protocol") {
+				break
+			}
+
+			time.Sleep(time.Millisecond * 500)
 		}
 
 		task, err := GetMostRecentTask(job, r)
