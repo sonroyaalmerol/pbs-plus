@@ -30,19 +30,10 @@ Ext.define('PBS.D2DManagement.BackupJobEdit', {
     },
 
     viewModel: {
-	data: {
-	    notificationMode: '__default__',
-	},
-	formulas: {
-	    notificationSystemSelected: (get) => get('notificationMode') === 'notification-system',
-	},
     },
 
     initComponent: function() {
 	let me = this;
-	// Automatically select the new system for new jobs
-	let mode = me.isCreate ? "notification-system" : "__default__";
-	me.getViewModel().set('notificationMode', mode);
 	me.callParent();
     },
 
@@ -56,8 +47,6 @@ Ext.define('PBS.D2DManagement.BackupJobEdit', {
 		xtype: 'inputpanel',
 		onGetValues: function(values) {
 		    let me = this;
-
-		    PBS.Utils.delete_if_default(values, 'notify-user');
 
 		    if (me.isCreate) {
 			delete values.delete;
@@ -90,30 +79,12 @@ Ext.define('PBS.D2DManagement.BackupJobEdit', {
 			name: 'store',
 		    },
 		    {
-			xtype: 'proxmoxKVComboBox',
-			comboItems: [
-			    ['__default__', `${Proxmox.Utils.defaultText}  (Email)`],
-			    ['legacy-sendmail', gettext('Email (legacy)')],
-			    ['notification-system', gettext('Notification system')],
-			],
-			fieldLabel: gettext('Notification mode'),
-			name: 'notification-mode',
-			bind: {
-			    value: '{notificationMode}',
-			},
-		    },
-		    {
-			xtype: 'pmxUserSelector',
-			name: 'notify-user',
-			fieldLabel: gettext('Notify User'),
-			emptyText: 'root@pam',
+			xtype: 'pmxDisplayEditField',
+			name: 'namespace',
+			fieldLabel: 'Namespace',
+			renderer: Ext.htmlEncode,
 			allowBlank: true,
-			value: null,
-			renderer: Ext.String.htmlEncode,
-			bind: {
-			    disabled: "{notificationSystemSelected}",
-			},
-		    },
+        },
 		],
 
 		column2: [

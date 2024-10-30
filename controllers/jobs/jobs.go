@@ -77,8 +77,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 
 		fmt.Printf("Target found: %s\n", target.Name)
 
-		cmd := exec.Command(
-			"/usr/bin/proxmox-backup-client",
+		cmdArgs := []string{
 			"backup",
 			fmt.Sprintf("%s.pxar:%s", strings.ReplaceAll(job.Target, " ", "-"), target.Path),
 			"--repository",
@@ -88,7 +87,14 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			"System Volume Information",
 			"--exclude",
 			"$RECYCLE.BIN",
-		)
+		}
+
+		if job.Namespace != "" {
+			cmdArgs = append(cmdArgs, "--ns")
+			cmdArgs = append(cmdArgs, job.Namespace)
+		}
+
+		cmd := exec.Command("/usr/bin/proxmox-backup-client", cmdArgs...)
 		cmd.Env = os.Environ()
 
 		logBuffer := bytes.Buffer{}
@@ -122,7 +128,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 				break
 			}
 
-			time.Sleep(time.Millisecond * 500)
+			time.Sleep(time.Millisecond * 100)
 		}
 
 		task, err := store.GetMostRecentTask(job, r)

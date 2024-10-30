@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -16,6 +17,7 @@ type Job struct {
 	Schedule         string  `db:"schedule" json:"schedule"`
 	Comment          string  `db:"comment" json:"comment"`
 	NotificationMode string  `db:"notification_mode" json:"notification-mode"`
+	Namespace        string  `db:"namespace" json:"namespace"`
 	NextRun          *int64  `db:"next_run" json:"next-run"`
 	LastRunUpid      *string `db:"last_run_upid" json:"last-run-upid"`
 	LastRunState     *string `json:"last-run-state"`
@@ -57,6 +59,7 @@ func (store *Store) CreateTables() error {
         comment TEXT,
         next_run INTEGER,
         last_run_upid TEXT,
+				namespace TEXT,
 				notification_mode TEXT
     );`
 
@@ -80,19 +83,19 @@ func (store *Store) CreateTables() error {
 
 // CreateJob inserts a new Job into the database
 func (store *Store) CreateJob(job Job) error {
-	query := `INSERT INTO disk_backup_job_status (id, store, target, schedule, comment, next_run, last_run_upid, notification_mode) 
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
-	_, err := store.Db.Exec(query, job.ID, job.Store, job.Target, job.Schedule, job.Comment, job.NextRun, job.LastRunUpid, job.NotificationMode)
+	query := `INSERT INTO disk_backup_job_status (id, store, target, schedule, comment, next_run, last_run_upid, notification_mode, namespace) 
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+	_, err := store.Db.Exec(query, job.ID, job.Store, job.Target, job.Schedule, job.Comment, job.NextRun, job.LastRunUpid, job.NotificationMode, job.Namespace)
 	return err
 }
 
 // GetJob retrieves a Job by ID
 func (store *Store) GetJob(id string) (*Job, error) {
-	query := `SELECT id, store, target, schedule, comment, next_run, last_run_upid, notification_mode FROM disk_backup_job_status WHERE id = ?;`
+	query := `SELECT id, store, target, schedule, comment, next_run, last_run_upid, notification_mode, namespace FROM disk_backup_job_status WHERE id = ?;`
 	row := store.Db.QueryRow(query, id)
 
 	var job Job
-	err := row.Scan(&job.ID, &job.Store, &job.Target, &job.Schedule, &job.Comment, &job.NextRun, &job.LastRunUpid, &job.NotificationMode)
+	err := row.Scan(&job.ID, &job.Store, &job.Target, &job.Schedule, &job.Comment, &job.NextRun, &job.LastRunUpid, &job.NotificationMode, &job.Namespace)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -107,11 +110,13 @@ func (store *Store) GetJob(id string) (*Job, error) {
 		}
 
 		job.LastRunEndtime = &task.EndTime
-		job.LastRunState = &task.Status
-		job.Duration = nil
+		job.LastRunState = &task.ExitStatus
 
 		if task.EndTime != 0 {
 			tmpDuration := task.EndTime - task.StartTime
+			job.Duration = &tmpDuration
+		} else {
+			tmpDuration := time.Now().Unix() - task.StartTime
 			job.Duration = &tmpDuration
 		}
 	}
@@ -121,8 +126,8 @@ func (store *Store) GetJob(id string) (*Job, error) {
 
 // UpdateJob updates an existing Job in the database
 func (store *Store) UpdateJob(job Job) error {
-	query := `UPDATE disk_backup_job_status SET store = ?, target = ?, schedule = ?, comment = ?, next_run = ?, last_run_upid = ?, notification_mode = ? WHERE id = ?;`
-	_, err := store.Db.Exec(query, job.Store, job.Target, job.Schedule, job.Comment, job.NextRun, job.LastRunUpid, job.NotificationMode, job.ID)
+	query := `UPDATE disk_backup_job_status SET store = ?, target = ?, schedule = ?, comment = ?, next_run = ?, last_run_upid = ?, notification_mode = ?, namespace = ? WHERE id = ?;`
+	_, err := store.Db.Exec(query, job.Store, job.Target, job.Schedule, job.Comment, job.NextRun, job.LastRunUpid, job.NotificationMode, job.Namespace, job.ID)
 	return err
 }
 
@@ -174,7 +179,7 @@ func (store *Store) DeleteTarget(name string) error {
 
 // GetAllJobes retrieves all Job records from the database
 func (store *Store) GetAllJobs() ([]Job, error) {
-	query := `SELECT id, store, target, schedule, comment, next_run, last_run_upid, last_run_state, last_run_endtime, duration, notification_mode FROM disk_backup_job_status;`
+	query := `SELECT id, store, target, schedule, comment, next_run, last_run_upid, last_run_state, last_run_endtime, duration, notification_mode, namespace FROM disk_backup_job_status;`
 	rows, err := store.Db.Query(query)
 	if err != nil {
 		return nil, err
@@ -185,7 +190,7 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 	jobs = make([]Job, 0)
 	for rows.Next() {
 		var job Job
-		err := rows.Scan(&job.ID, &job.Store, &job.Target, &job.Schedule, &job.Comment, &job.NextRun, &job.LastRunUpid, &job.LastRunState, &job.LastRunEndtime, &job.Duration, &job.NotificationMode)
+		err := rows.Scan(&job.ID, &job.Store, &job.Target, &job.Schedule, &job.Comment, &job.NextRun, &job.LastRunUpid, &job.LastRunState, &job.LastRunEndtime, &job.Duration, &job.NotificationMode, &job.Namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -197,11 +202,13 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 			}
 
 			job.LastRunEndtime = &task.EndTime
-			job.LastRunState = &task.Status
-			job.Duration = nil
+			job.LastRunState = &task.ExitStatus
 
 			if task.EndTime != 0 {
 				tmpDuration := task.EndTime - task.StartTime
+				job.Duration = &tmpDuration
+			} else {
+				tmpDuration := time.Now().Unix() - task.StartTime
 				job.Duration = &tmpDuration
 			}
 		}

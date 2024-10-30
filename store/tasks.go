@@ -29,6 +29,7 @@ type Task struct {
 	User       string `json:"user"`
 	WorkerType string `json:"worker_type"`
 	Status     string `json:"status"`
+	ExitStatus string `json:"exitstatus"`
 }
 
 func GetMostRecentTask(job *Job, r *http.Request) (*Task, error) {
