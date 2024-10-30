@@ -51,7 +51,7 @@ func main() {
 	}))
 
 	log.Println("Starting proxy server on :8008")
-	if err := http.ListenAndServeTLS(":8008", "/etc/proxmox-backup/proxy.pem", "/etc/proxmox-backup/proxy.key", mux); err != nil {
+	if err := http.ListenAndServeTLS(":8008", store.CertFile, store.KeyFile, mux); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
