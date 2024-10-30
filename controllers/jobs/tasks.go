@@ -45,9 +45,10 @@ func GetMostRecentTask(job *store.Job, r *http.Request) (*Task, error) {
 		return nil, err
 	}
 
-	tasks := make([]Task, 0)
+	var tasks []Task
 	err = json.Unmarshal(tasksBody, &tasks)
 	if err != nil {
+		fmt.Println(tasksBody)
 		return nil, err
 	}
 
@@ -95,6 +96,7 @@ func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
 	var task Task
 	err = json.Unmarshal(tasksBody, &task)
 	if err != nil {
+		fmt.Println(tasksBody)
 		return nil, err
 	}
 
