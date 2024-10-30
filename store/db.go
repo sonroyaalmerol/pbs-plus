@@ -109,8 +109,9 @@ func (store *Store) GetJob(id string) (*Job, error) {
 			return nil, err
 		}
 
+		job.LastRunEndtime = &task.EndTime
+
 		if task.Status == "stopped" {
-			job.LastRunEndtime = &task.EndTime
 			job.LastRunState = &task.ExitStatus
 
 			tmpDuration := task.EndTime - task.StartTime
@@ -201,8 +202,9 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 				return nil, err
 			}
 
+			job.LastRunEndtime = &task.EndTime
+
 			if task.Status == "stopped" {
-				job.LastRunEndtime = &task.EndTime
 				job.LastRunState = &task.ExitStatus
 
 				tmpDuration := task.EndTime - task.StartTime
