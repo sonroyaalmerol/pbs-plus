@@ -179,7 +179,7 @@ func (store *Store) DeleteTarget(name string) error {
 
 // GetAllJobes retrieves all Job records from the database
 func (store *Store) GetAllJobs() ([]Job, error) {
-	query := `SELECT id, store, target, schedule, comment, next_run, last_run_upid, last_run_state, last_run_endtime, duration, notification_mode, namespace FROM disk_backup_job_status;`
+	query := `SELECT id, store, target, schedule, comment, next_run, last_run_upid, notification_mode, namespace FROM disk_backup_job_status;`
 	rows, err := store.Db.Query(query)
 	if err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 	jobs = make([]Job, 0)
 	for rows.Next() {
 		var job Job
-		err := rows.Scan(&job.ID, &job.Store, &job.Target, &job.Schedule, &job.Comment, &job.NextRun, &job.LastRunUpid, &job.LastRunState, &job.LastRunEndtime, &job.Duration, &job.NotificationMode, &job.Namespace)
+		err := rows.Scan(&job.ID, &job.Store, &job.Target, &job.Schedule, &job.Comment, &job.NextRun, &job.LastRunUpid, &job.NotificationMode, &job.Namespace)
 		if err != nil {
 			return nil, err
 		}
