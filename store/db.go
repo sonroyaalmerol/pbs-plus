@@ -84,7 +84,7 @@ func (store *Store) CreateTables() error {
 // CreateJob inserts a new Job into the database
 func (store *Store) CreateJob(job Job) error {
 	query := `INSERT INTO disk_backup_job_status (id, store, target, schedule, comment, next_run, last_run_upid, notification_mode, namespace) 
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`
 	_, err := store.Db.Exec(query, job.ID, job.Store, job.Target, job.Schedule, job.Comment, job.NextRun, job.LastRunUpid, job.NotificationMode, job.Namespace)
 	return err
 }
