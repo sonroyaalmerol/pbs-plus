@@ -4,7 +4,7 @@ import (
 	"embed"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 )
 
 func CompileCustomJS(customJsFS *embed.FS, basePath string) []byte {
@@ -20,7 +20,7 @@ func CompileCustomJS(customJsFS *embed.FS, basePath string) []byte {
 	}
 
 	for _, file := range files {
-		filePath := path.Join(basePath, file.Name())
+		filePath := filepath.Join(basePath, file.Name())
 		if !file.IsDir() {
 			content, err := os.ReadFile(filePath)
 			if err != nil {
