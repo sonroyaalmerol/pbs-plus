@@ -82,8 +82,10 @@ Ext.define('PBS.D2DManagement.BackupJobEdit', {
 			xtype: 'pmxDisplayEditField',
 			name: 'namespace',
 			fieldLabel: 'Namespace',
-			renderer: Ext.htmlEncode,
 			allowBlank: true,
+			cbind: {
+			    editable: true,
+			},
         },
 		],
 
