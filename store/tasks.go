@@ -20,6 +20,7 @@ type TaskResponse struct {
 }
 
 type Task struct {
+	WID        string `json:"id"`
 	Node       string `json:"node"`
 	PID        int    `json:"pid"`
 	PStart     int    `json:"pstart"`
