@@ -1,4 +1,4 @@
-package jobs
+package store
 
 import (
 	"crypto/tls"
@@ -7,16 +7,36 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	"sgl.com/pbs-ui/store"
 )
 
-func GetMostRecentTask(job *store.Job, r *http.Request) (*Task, error) {
+type TasksResponse struct {
+	Data  []Task `json:"data"`
+	Total int    `json:"total"`
+}
+
+type TaskResponse struct {
+	Data  Task `json:"data"`
+	Total int  `json:"total"`
+}
+
+type Task struct {
+	Node       string `json:"node"`
+	PID        int    `json:"pid"`
+	PStart     int    `json:"pstart"`
+	StartTime  int64  `json:"starttime"`
+	EndTime    int64  `json:"endtime"`
+	UPID       string `json:"upid"`
+	User       string `json:"user"`
+	WorkerType string `json:"worker_type"`
+	Status     string `json:"status"`
+}
+
+func GetMostRecentTask(job *Job, r *http.Request) (*Task, error) {
 	tasksReq, err := http.NewRequest(
 		http.MethodGet,
 		fmt.Sprintf(
 			"%s/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&limit=1",
-			store.ProxyTargetURL,
+			ProxyTargetURL,
 			job.Store,
 		),
 		nil,
@@ -64,7 +84,7 @@ func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
 		http.MethodGet,
 		fmt.Sprintf(
 			"%s/api2/json/nodes/localhost/tasks/%s/status",
-			store.ProxyTargetURL,
+			ProxyTargetURL,
 			upid,
 		),
 		nil,

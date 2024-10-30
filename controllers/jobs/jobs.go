@@ -22,6 +22,8 @@ func D2DJobHandler(storeInstance *store.Store) func(http.ResponseWriter, *http.R
 			http.Error(w, "Invalid HTTP method", http.StatusBadRequest)
 		}
 
+		storeInstance.LastReq = r
+
 		allJobs, err := storeInstance.GetAllJobs()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
@@ -59,6 +61,8 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			json.NewEncoder(w).Encode(response)
 			return
 		}
+
+		storeInstance.LastReq = r
 
 		fmt.Printf("Job started: %s\n", job.ID)
 
@@ -121,7 +125,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			time.Sleep(time.Millisecond * 500)
 		}
 
-		task, err := GetMostRecentTask(job, r)
+		task, err := store.GetMostRecentTask(job, r)
 		if err != nil {
 			fmt.Printf("error getting task: %v\n", err)
 
@@ -160,7 +164,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 
 			fmt.Printf("done waiting, closing task\n")
 
-			taskFound, err := GetTaskByUPID(task.UPID, r)
+			taskFound, err := store.GetTaskByUPID(task.UPID, r)
 			if err != nil {
 				fmt.Printf("error updating job: %v\n", err)
 				return
@@ -221,6 +225,8 @@ func ExtJsJobHandler(storeInstance *store.Store) func(http.ResponseWriter, *http
 			return
 		}
 
+		storeInstance.LastReq = r
+
 		response.Status = http.StatusOK
 		response.Success = true
 		json.NewEncoder(w).Encode(response)
@@ -233,6 +239,7 @@ func ExtJsJobSingleHandler(storeInstance *store.Store) func(http.ResponseWriter,
 		if r.Method != http.MethodPut && r.Method != http.MethodGet && r.Method != http.MethodDelete {
 			http.Error(w, "Invalid HTTP method", http.StatusBadRequest)
 		}
+		storeInstance.LastReq = r
 
 		w.Header().Set("Content-Type", "application/json")
 
