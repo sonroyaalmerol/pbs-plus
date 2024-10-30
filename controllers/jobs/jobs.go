@@ -3,7 +3,6 @@ package jobs
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -98,48 +97,33 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			return
 		}
 
-		tasksReq, err := http.NewRequest(
-			http.MethodGet,
-			fmt.Sprintf(
-				"%s/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&limit=1",
-				store.ProxyTargetURL,
-				job.Store,
-			),
-			nil,
-		)
-		tasksReq.Header.Set("Csrfpreventiontoken", r.Header.Get("Csrfpreventiontoken"))
-		tasksReq.Header.Set("User-Agent", r.Header.Get("User-Agent"))
-
-		for _, cookie := range r.Cookies() {
-			tasksReq.AddCookie(cookie)
-		}
-
-		tasksResp, err := http.DefaultClient.Do(tasksReq)
+		task, err := GetMostRecentTask(job, r)
 		if err != nil {
-			fmt.Printf("error getting tasks: %v\n", err)
+			fmt.Printf("error getting task: %v\n", err)
+
+			_ = cmd.Process.Kill()
+
+			response.Message = err.Error()
+			response.Status = http.StatusBadGateway
+			response.Success = false
+			json.NewEncoder(w).Encode(response)
+			return
 		}
 
-		tasksBody, err := io.ReadAll(tasksResp.Body)
-		if err != nil {
-			fmt.Printf("error getting tasks: %v\n", err)
-		}
-
-		tasks := make([]Task, 0)
-		err = json.Unmarshal(tasksBody, &tasks)
-		if err != nil {
-			fmt.Printf("error getting tasks: %v\n", err)
-		}
-
-		if len(tasks) == 0 {
-			fmt.Println("error getting tasks: not found")
-		}
-
-		job.LastRunUpid = &tasks[0].UPID
-		job.LastRunState = &tasks[0].Status
+		job.LastRunUpid = &task.UPID
+		job.LastRunState = &task.Status
 
 		err = storeInstance.UpdateJob(*job)
 		if err != nil {
 			fmt.Printf("error updating job: %v\n", err)
+
+			_ = cmd.Process.Kill()
+
+			response.Message = err.Error()
+			response.Status = http.StatusBadGateway
+			response.Success = false
+			json.NewEncoder(w).Encode(response)
+			return
 		}
 		fmt.Printf("Updated job: %s\n", job.ID)
 
@@ -152,46 +136,9 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 
 			fmt.Printf("done waiting, closing task\n")
 
-			tasksReq, err := http.NewRequest(
-				http.MethodGet,
-				fmt.Sprintf(
-					"%s/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&running=false",
-					store.ProxyTargetURL,
-					job.Store,
-				),
-				nil,
-			)
-			tasksReq.Header.Set("User-Agent", r.Header.Get("User-Agent"))
-
-			tasksResp, err := http.DefaultClient.Do(tasksReq)
+			taskFound, err := GetTaskByUPID(task.UPID, r)
 			if err != nil {
-				fmt.Printf("error getting tasks: %v\n", err)
-				return
-			}
-
-			tasksBody, err := io.ReadAll(tasksResp.Body)
-			if err != nil {
-				fmt.Printf("error getting tasks: %v\n", err)
-				return
-			}
-
-			doneTasks := make([]Task, 0)
-			err = json.Unmarshal(tasksBody, &doneTasks)
-			if err != nil {
-				fmt.Printf("error getting tasks: %v\n", err)
-				return
-			}
-
-			var taskFound *Task
-			for _, currTask := range doneTasks {
-				if currTask.UPID == tasks[0].UPID {
-					taskFound = &currTask
-					break
-				}
-			}
-
-			if taskFound == nil {
-				fmt.Println("error getting tasks: not found")
+				fmt.Printf("error updating job: %v\n", err)
 				return
 			}
 
@@ -202,11 +149,12 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			err = storeInstance.UpdateJob(*job)
 			if err != nil {
 				fmt.Printf("error updating job: %v\n", err)
+				return
 			}
 		}()
 
 		w.Header().Set("Content-Type", "application/json")
-		response.Data = tasks[0].UPID
+		response.Data = task.UPID
 		response.Status = http.StatusOK
 		response.Success = true
 		json.NewEncoder(w).Encode(response)
