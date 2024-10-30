@@ -1,16 +1,15 @@
 package jobs
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 
-	"sgl.com/pbs-ui/logging"
 	"sgl.com/pbs-ui/store"
 	"sgl.com/pbs-ui/utils"
 )
@@ -72,7 +71,6 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 
 		fmt.Printf("Target found: %s\n", target.Name)
 
-		cmdBuffer := new(bytes.Buffer)
 		cmd := exec.Command(
 			"/usr/bin/proxmox-backup-client",
 			"backup",
@@ -80,12 +78,14 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			"--repository",
 			job.Store,
 			"--change-detection-mode=metadata",
-			"--exclude=\"System Volume Information\"",
-			"--exclude=\"$RECYCLE.BIN\"",
+			"--exclude",
+			"System Volume Information",
+			"--exclude",
+			"$RECYCLE.BIN",
 		)
 		cmd.Env = os.Environ()
-		cmd.Stdout = cmdBuffer
-		cmd.Stderr = cmdBuffer
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 
 		fmt.Printf("Command composed: %s\n", cmd.String())
 
@@ -98,32 +98,50 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			return
 		}
 
-		task := logging.Initialize(cmd.Process.Pid, job.Target, "", "")
-		fmt.Printf("Task initialized: %s\n", task.UPID)
+		tasksReq, err := http.NewRequest(
+			http.MethodGet,
+			fmt.Sprintf(
+				"%s/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&limit=1",
+				store.ProxyTargetURL,
+				job.Store,
+			),
+			nil,
+		)
+		tasksReq.Header.Set("Csrfpreventiontoken", r.Header.Get("Csrfpreventiontoken"))
+		tasksReq.Header.Set("User-Agent", r.Header.Get("User-Agent"))
 
-		job.LastRunUpid = &task.UPID
-		job.LastRunState = &task.Status
+		for _, cookie := range r.Cookies() {
+			tasksReq.AddCookie(cookie)
+		}
+
+		tasksResp, err := http.DefaultClient.Do(tasksReq)
+		if err != nil {
+			fmt.Printf("error getting tasks: %v\n", err)
+		}
+
+		tasksBody, err := io.ReadAll(tasksResp.Body)
+		if err != nil {
+			fmt.Printf("error getting tasks: %v\n", err)
+		}
+
+		tasks := make([]Task, 0)
+		err = json.Unmarshal(tasksBody, &tasks)
+		if err != nil {
+			fmt.Printf("error getting tasks: %v\n", err)
+		}
+
+		if len(tasks) == 0 {
+			fmt.Println("error getting tasks: not found")
+		}
+
+		job.LastRunUpid = &tasks[0].UPID
+		job.LastRunState = &tasks[0].Status
 
 		err = storeInstance.UpdateJob(*job)
 		if err != nil {
 			fmt.Printf("error updating job: %v\n", err)
 		}
 		fmt.Printf("Updated job: %s\n", job.ID)
-
-		log, err := task.GetLogger()
-		if err != nil {
-			fmt.Printf("%s\n", err)
-			return
-		}
-
-		go func() {
-			fmt.Printf("Logger buffer to log writer goroutine started\n")
-			writer := log.Writer()
-			_, err = io.Copy(writer, cmdBuffer)
-			if err != nil {
-				fmt.Printf("log writer err: %v\n", err)
-			}
-		}()
 
 		go func() {
 			fmt.Printf("cmd wait goroutine started\n")
@@ -134,15 +152,51 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 
 			fmt.Printf("done waiting, closing task\n")
 
-			err = task.Close()
+			tasksReq, err := http.NewRequest(
+				http.MethodGet,
+				fmt.Sprintf(
+					"%s/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&running=false",
+					store.ProxyTargetURL,
+					job.Store,
+				),
+				nil,
+			)
+			tasksReq.Header.Set("User-Agent", r.Header.Get("User-Agent"))
+
+			tasksResp, err := http.DefaultClient.Do(tasksReq)
 			if err != nil {
-				fmt.Printf("%s\n", err)
+				fmt.Printf("error getting tasks: %v\n", err)
+				return
 			}
 
-			endTimeUnix := task.EndTime.Unix()
+			tasksBody, err := io.ReadAll(tasksResp.Body)
+			if err != nil {
+				fmt.Printf("error getting tasks: %v\n", err)
+				return
+			}
 
-			job.LastRunState = &task.Status
-			job.LastRunEndtime = &endTimeUnix
+			doneTasks := make([]Task, 0)
+			err = json.Unmarshal(tasksBody, &doneTasks)
+			if err != nil {
+				fmt.Printf("error getting tasks: %v\n", err)
+				return
+			}
+
+			var taskFound *Task
+			for _, currTask := range doneTasks {
+				if currTask.UPID == tasks[0].UPID {
+					taskFound = &currTask
+					break
+				}
+			}
+
+			if taskFound == nil {
+				fmt.Println("error getting tasks: not found")
+				return
+			}
+
+			job.LastRunState = &taskFound.Status
+			job.LastRunEndtime = &taskFound.EndTime
 
 			fmt.Printf("Updated job: %s\n", job.ID)
 			err = storeInstance.UpdateJob(*job)
@@ -152,7 +206,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 		}()
 
 		w.Header().Set("Content-Type", "application/json")
-		response.Data = task.UPID
+		response.Data = tasks[0].UPID
 		response.Status = http.StatusOK
 		response.Success = true
 		json.NewEncoder(w).Encode(response)
