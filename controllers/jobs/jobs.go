@@ -81,7 +81,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			job.Store,
 			"--change-detection-mode=metadata",
 			"--exclude=\"System Volume Information\"",
-			"--exclude=\"\\$RECYCLE.BIN\"",
+			"--exclude=\"$RECYCLE.BIN\"",
 		)
 		cmd.Env = os.Environ()
 		cmd.Stdout = cmdBuffer
