@@ -122,13 +122,14 @@ func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
 		return nil, err
 	}
 
-	endTime, err := GetTaskEndTime(&taskStruct.Data, r)
-	if err != nil {
-		return nil, err
+	if taskStruct.Data.Status == "stopped" {
+		endTime, err := GetTaskEndTime(&taskStruct.Data, r)
+		if err != nil {
+			return nil, err
+		}
+
+		taskStruct.Data.EndTime = endTime
 	}
-
-	taskStruct.Data.EndTime = endTime
-
 	return &taskStruct.Data, nil
 }
 
