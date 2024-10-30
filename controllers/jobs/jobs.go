@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -105,22 +104,20 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 		job.LastRunUpid = &task.UPID
 		job.LastRunState = &task.Status
 
-		response.Data = task.UPID
-
 		err = storeInstance.UpdateJob(*job)
 		if err != nil {
 			fmt.Printf("error updating job: %v\n", err)
 		}
 		fmt.Printf("Updated job: %s\n", job.ID)
 
+		log, err := task.GetLogger()
+		if err != nil {
+			fmt.Printf("%s\n", err)
+			return
+		}
+
 		go func() {
 			fmt.Printf("Logger buffer to log writer goroutine started\n")
-			log, err := task.GetLogger()
-			if err != nil {
-				fmt.Printf("%s\n", err)
-				return
-			}
-
 			writer := log.Writer()
 			_, err = io.Copy(writer, cmdBuffer)
 			if err != nil {
@@ -155,6 +152,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 		}()
 
 		w.Header().Set("Content-Type", "application/json")
+		response.Data = task.UPID
 		response.Status = http.StatusOK
 		response.Success = true
 		json.NewEncoder(w).Encode(response)
