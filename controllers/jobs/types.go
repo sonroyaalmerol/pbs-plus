@@ -23,6 +23,16 @@ type JobRunResponse struct {
 	Success bool              `json:"success"`
 }
 
+type TasksResponse struct {
+	Data  []Task `json:"data"`
+	Total int    `json:"total"`
+}
+
+type TaskResponse struct {
+	Data  Task `json:"data"`
+	Total int  `json:"total"`
+}
+
 type Task struct {
 	Node       string `json:"node"`
 	PID        int    `json:"pid"`

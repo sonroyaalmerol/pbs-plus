@@ -45,18 +45,18 @@ func GetMostRecentTask(job *store.Job, r *http.Request) (*Task, error) {
 		return nil, err
 	}
 
-	var tasks []Task
-	err = json.Unmarshal(tasksBody, &tasks)
+	var tasksStruct TasksResponse
+	err = json.Unmarshal(tasksBody, &tasksStruct)
 	if err != nil {
 		fmt.Println(tasksBody)
 		return nil, err
 	}
 
-	if len(tasks) == 0 {
+	if len(tasksStruct.Data) == 0 {
 		return nil, fmt.Errorf("error getting tasks: not found")
 	}
 
-	return &tasks[0], nil
+	return &tasksStruct.Data[0], nil
 }
 
 func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
@@ -93,12 +93,12 @@ func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
 		return nil, err
 	}
 
-	var task Task
-	err = json.Unmarshal(tasksBody, &task)
+	var taskStruct TaskResponse
+	err = json.Unmarshal(tasksBody, &taskStruct)
 	if err != nil {
 		fmt.Println(tasksBody)
 		return nil, err
 	}
 
-	return &task, nil
+	return &taskStruct.Data, nil
 }
