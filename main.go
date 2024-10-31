@@ -57,7 +57,7 @@ func main() {
 			return
 		}
 
-		if *jobTask.LastRunState == "" {
+		if jobTask.LastRunState == nil {
 			fmt.Println("A job is still running, skipping this schedule.")
 			return
 		}
