@@ -2,19 +2,25 @@ package main
 
 import (
 	"embed"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 
+	"github.com/robfig/cron"
 	"sgl.com/pbs-ui/controllers/jobs"
 	"sgl.com/pbs-ui/controllers/targets"
 	"sgl.com/pbs-ui/store"
+	"sgl.com/pbs-ui/utils"
 )
 
 //go:embed all:views
 var customJsFS embed.FS
 
 func main() {
+	jobRun := flag.String("job", "", "Job ID to execute")
+
 	mux := http.NewServeMux()
 
 	targetURL, err := url.Parse(store.ProxyTargetURL)
@@ -33,6 +39,45 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create store tables: %v", err)
 	}
+
+	if *jobRun != "" {
+		token, err := utils.ReadToken()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		ticketCookie := http.Cookie{
+			Name:  "PBSAuthCookie",
+			Value: token.Ticket,
+			Path:  "/",
+		}
+		if storeInstance.LastReq == nil {
+			storeInstance.LastReq = new(http.Request)
+		}
+
+		storeInstance.LastReq.AddCookie(&ticketCookie)
+		storeInstance.LastReq.Header.Add("csrfpreventiontoken", token.CSRFToken)
+
+		jobTask, err := storeInstance.GetJob(*jobRun)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		_, err = jobs.RunJob(jobTask, storeInstance, nil)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		return
+	}
+
+	c := cron.New()
+	c.AddFunc("*/5 * * * *", func() {
+		utils.RefreshFileToken(storeInstance)
+	})
+	c.Start()
 
 	mux.HandleFunc("/api2/json/d2d/backup", jobs.D2DJobHandler(storeInstance))
 	mux.HandleFunc("/api2/json/d2d/target", targets.D2DTargetHandler(storeInstance))

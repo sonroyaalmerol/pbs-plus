@@ -16,6 +16,117 @@ import (
 	"sgl.com/pbs-ui/utils"
 )
 
+func RunJob(job *store.Job, storeInstance *store.Store, r *http.Request) (*store.Task, error) {
+	if r != nil {
+		storeInstance.LastReq = r
+	}
+
+	fmt.Printf("Job started: %s\n", job.ID)
+
+	target, err := storeInstance.GetTarget(job.Target)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("Target found: %s\n", target.Name)
+
+	cmdArgs := []string{
+		"backup",
+		fmt.Sprintf("%s.pxar:%s", strings.ReplaceAll(job.Target, " ", "-"), target.Path),
+		"--repository",
+		job.Store,
+		"--change-detection-mode=metadata",
+		"--exclude",
+		"System Volume Information",
+		"--exclude",
+		"$RECYCLE.BIN",
+	}
+
+	if job.Namespace != "" {
+		cmdArgs = append(cmdArgs, "--ns")
+		cmdArgs = append(cmdArgs, job.Namespace)
+	}
+
+	cmd := exec.Command("/usr/bin/proxmox-backup-client", cmdArgs...)
+	cmd.Env = os.Environ()
+
+	logBuffer := bytes.Buffer{}
+	writer := io.MultiWriter(os.Stdout, &logBuffer)
+
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	fmt.Printf("Command composed: %s\n", cmd.String())
+
+	err = cmd.Start()
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		line, err := logBuffer.ReadString('\n')
+		if err != nil && line != "" {
+			return nil, err
+		}
+
+		if strings.Contains(line, "Starting backup protocol") {
+			break
+		}
+
+		time.Sleep(time.Millisecond * 100)
+	}
+
+	task, err := store.GetMostRecentTask(job, storeInstance.LastReq)
+	if err != nil {
+		fmt.Printf("error getting task: %v\n", err)
+
+		_ = cmd.Process.Kill()
+
+		return nil, err
+	}
+
+	job.LastRunUpid = &task.UPID
+	job.LastRunState = &task.Status
+
+	err = storeInstance.UpdateJob(*job)
+	if err != nil {
+		fmt.Printf("error updating job: %v\n", err)
+
+		_ = cmd.Process.Kill()
+
+		return nil, err
+	}
+	fmt.Printf("Updated job: %s\n", job.ID)
+
+	go func() {
+		fmt.Printf("cmd wait goroutine started\n")
+		err = cmd.Wait()
+		if err != nil {
+			log.Printf("%s\n", err)
+		}
+
+		fmt.Printf("done waiting, closing task\n")
+
+		taskFound, err := store.GetTaskByUPID(task.UPID, storeInstance.LastReq)
+		if err != nil {
+			fmt.Printf("error updating job: %v\n", err)
+			return
+		}
+
+		job.LastRunState = &taskFound.Status
+		job.LastRunEndtime = &taskFound.EndTime
+
+		fmt.Printf("Updated job: %s\n", job.ID)
+		err = storeInstance.UpdateJob(*job)
+		if err != nil {
+			fmt.Printf("error updating job: %v\n", err)
+			return
+		}
+	}()
+
+	return task, nil
+}
+
 func D2DJobHandler(storeInstance *store.Store) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -55,137 +166,25 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 
 		job, err := storeInstance.GetJob(r.PathValue("job"))
 		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
 			response.Message = err.Error()
-			response.Status = http.StatusNotFound
+			response.Status = http.StatusBadRequest
 			response.Success = false
 			json.NewEncoder(w).Encode(response)
+
 			return
 		}
 
-		storeInstance.LastReq = r
-
-		fmt.Printf("Job started: %s\n", job.ID)
-
-		target, err := storeInstance.GetTarget(job.Target)
+		task, err := RunJob(job, storeInstance, r)
 		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
 			response.Message = err.Error()
-			response.Status = http.StatusNotFound
+			response.Status = http.StatusBadRequest
 			response.Success = false
 			json.NewEncoder(w).Encode(response)
+
 			return
 		}
-
-		fmt.Printf("Target found: %s\n", target.Name)
-
-		cmdArgs := []string{
-			"backup",
-			fmt.Sprintf("%s.pxar:%s", strings.ReplaceAll(job.Target, " ", "-"), target.Path),
-			"--repository",
-			job.Store,
-			"--change-detection-mode=metadata",
-			"--exclude",
-			"System Volume Information",
-			"--exclude",
-			"$RECYCLE.BIN",
-		}
-
-		if job.Namespace != "" {
-			cmdArgs = append(cmdArgs, "--ns")
-			cmdArgs = append(cmdArgs, job.Namespace)
-		}
-
-		cmd := exec.Command("/usr/bin/proxmox-backup-client", cmdArgs...)
-		cmd.Env = os.Environ()
-
-		logBuffer := bytes.Buffer{}
-		writer := io.MultiWriter(os.Stdout, &logBuffer)
-
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-
-		fmt.Printf("Command composed: %s\n", cmd.String())
-
-		err = cmd.Start()
-		if err != nil {
-			response.Message = err.Error()
-			response.Status = http.StatusBadGateway
-			response.Success = false
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-
-		for {
-			line, err := logBuffer.ReadString('\n')
-			if err != nil && line != "" {
-				response.Message = err.Error()
-				response.Status = http.StatusBadGateway
-				response.Success = false
-				json.NewEncoder(w).Encode(response)
-				return
-			}
-
-			if strings.Contains(line, "Starting backup protocol") {
-				break
-			}
-
-			time.Sleep(time.Millisecond * 100)
-		}
-
-		task, err := store.GetMostRecentTask(job, r)
-		if err != nil {
-			fmt.Printf("error getting task: %v\n", err)
-
-			_ = cmd.Process.Kill()
-
-			response.Message = err.Error()
-			response.Status = http.StatusBadGateway
-			response.Success = false
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-
-		job.LastRunUpid = &task.UPID
-		job.LastRunState = &task.Status
-
-		err = storeInstance.UpdateJob(*job)
-		if err != nil {
-			fmt.Printf("error updating job: %v\n", err)
-
-			_ = cmd.Process.Kill()
-
-			response.Message = err.Error()
-			response.Status = http.StatusBadGateway
-			response.Success = false
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-		fmt.Printf("Updated job: %s\n", job.ID)
-
-		go func() {
-			fmt.Printf("cmd wait goroutine started\n")
-			err = cmd.Wait()
-			if err != nil {
-				log.Printf("%s\n", err)
-			}
-
-			fmt.Printf("done waiting, closing task\n")
-
-			taskFound, err := store.GetTaskByUPID(task.UPID, r)
-			if err != nil {
-				fmt.Printf("error updating job: %v\n", err)
-				return
-			}
-
-			job.LastRunState = &taskFound.Status
-			job.LastRunEndtime = &taskFound.EndTime
-
-			fmt.Printf("Updated job: %s\n", job.ID)
-			err = storeInstance.UpdateJob(*job)
-			if err != nil {
-				fmt.Printf("error updating job: %v\n", err)
-				return
-			}
-		}()
 
 		w.Header().Set("Content-Type", "application/json")
 		response.Data = task.UPID

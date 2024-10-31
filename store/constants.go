@@ -5,4 +5,6 @@ const (
 	ModifiedFilePath = "/js/proxmox-backup-gui.js"     // The specific JS file to modify
 	CertFile         = "/etc/proxmox-backup/proxy.pem" // Path to generated SSL certificate
 	KeyFile          = "/etc/proxmox-backup/proxy.key" // Path to generated private key
+	TimerBasePath    = "/lib/systemd/system"
+	DbBasePath       = "/var/lib/proxmox-backup"
 )

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -39,7 +40,7 @@ type Store struct {
 
 // Initialize initializes the database connection and returns a Store instance
 func Initialize() (*Store, error) {
-	db, err := sql.Open("sqlite3", "/var/lib/proxmox-backup/d2d.db")
+	db, err := sql.Open("sqlite3", filepath.Join(DbBasePath, "d2d.db"))
 	if err != nil {
 		return nil, err
 	}
