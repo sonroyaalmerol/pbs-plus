@@ -1,10 +1,13 @@
 package store
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func generateTimer(job *Job) error {
@@ -61,4 +64,59 @@ ExecStart=/usr/local/bin/pbs-d2d-backup -job="%s"`, job.ID, job.ID)
 	}
 
 	return nil
+}
+
+type TimerInfo struct {
+	Next      time.Time
+	Left      string
+	Last      time.Time
+	Passed    string
+	Unit      string
+	Activates string
+}
+
+func getNextSchedule(job *Job) (*time.Time, error) {
+	cmd := exec.Command("systemctl", "list-timers", "--all")
+	cmd.Env = os.Environ()
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("error running systemctl command: %v", err)
+	}
+
+	timerUnit := fmt.Sprintf("proxmox-d2d-job-%s.timer", strings.ReplaceAll(job.ID, " ", "-"))
+
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	layout := "Mon 2006-01-02 15:04:05 MST"
+
+	scanner.Scan()
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+
+		if len(fields) < 6 {
+			continue
+		}
+
+		nextTime, err := time.Parse(layout, fields[0]+" "+fields[1]+" "+fields[2])
+		if err != nil {
+			return nil, fmt.Errorf("error parsing Next time: %v", err)
+		}
+
+		timer := TimerInfo{
+			Next: nextTime,
+			Unit: fields[8],
+		}
+
+		if timer.Unit == timerUnit {
+			return &timer.Next, nil
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading command output: %v", err)
+	}
+
+	return nil, nil
 }

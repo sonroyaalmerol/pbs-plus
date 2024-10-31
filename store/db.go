@@ -131,6 +131,14 @@ func (store *Store) GetJob(id string) (*Job, error) {
 		}
 	}
 
+	nextSchedule, err := getNextSchedule(&job)
+	if err != nil {
+		return nil, err
+	}
+	nextSchedUnix := nextSchedule.Unix()
+
+	job.NextRun = &nextSchedUnix
+
 	return &job, nil
 }
 
@@ -186,7 +194,7 @@ func (store *Store) SetSchedule(job Job) error {
 		return nil
 	}
 
-	cmd = exec.Command("/usr/bin/systemctl", "enable", timerPath)
+	cmd = exec.Command("/usr/bin/systemctl", "enable", "--now", timerPath)
 	cmd.Env = os.Environ()
 	err = cmd.Run()
 	if err != nil {
@@ -278,6 +286,14 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 				job.Duration = &tmpDuration
 			}
 		}
+
+		nextSchedule, err := getNextSchedule(&job)
+		if err != nil {
+			return nil, err
+		}
+		nextSchedUnix := nextSchedule.Unix()
+
+		job.NextRun = &nextSchedUnix
 		jobs = append(jobs, job)
 	}
 
