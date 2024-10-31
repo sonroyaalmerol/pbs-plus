@@ -3,8 +3,12 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -87,6 +91,11 @@ func (store *Store) CreateJob(job Job) error {
 	query := `INSERT INTO disk_backup_job_status (id, store, target, schedule, comment, next_run, last_run_upid, notification_mode, namespace) 
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`
 	_, err := store.Db.Exec(query, job.ID, job.Store, job.Target, job.Schedule, job.Comment, job.NextRun, job.LastRunUpid, job.NotificationMode, job.Namespace)
+	if err != nil {
+		return err
+	}
+
+	err = store.SetSchedule(job)
 	return err
 }
 
@@ -130,7 +139,62 @@ func (store *Store) GetJob(id string) (*Job, error) {
 func (store *Store) UpdateJob(job Job) error {
 	query := `UPDATE disk_backup_job_status SET store = ?, target = ?, schedule = ?, comment = ?, next_run = ?, last_run_upid = ?, notification_mode = ?, namespace = ? WHERE id = ?;`
 	_, err := store.Db.Exec(query, job.Store, job.Target, job.Schedule, job.Comment, job.NextRun, job.LastRunUpid, job.NotificationMode, job.Namespace, job.ID)
+	if err != nil {
+		return err
+	}
+
+	err = store.SetSchedule(job)
 	return err
+}
+
+func (store *Store) SetSchedule(job Job) error {
+	svcPath := fmt.Sprintf("proxmox-d2d-job-%s.service", strings.ReplaceAll(job.ID, " ", "-"))
+	fullSvcPath := filepath.Join(TimerBasePath, svcPath)
+
+	timerPath := fmt.Sprintf("proxmox-d2d-job-%s.timer", strings.ReplaceAll(job.ID, " ", "-"))
+	fullTimerPath := filepath.Join(TimerBasePath, timerPath)
+
+	if job.Schedule == "" {
+		err := os.Remove(fullSvcPath)
+		if err != nil {
+			return err
+		}
+
+		err = os.Remove(fullTimerPath)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := generateService(&job)
+		if err != nil {
+			return err
+		}
+
+		err = generateTimer(&job)
+		if err != nil {
+			return err
+		}
+	}
+
+	cmd := exec.Command("/usr/bin/systemctl", "daemon-reload")
+	cmd.Env = os.Environ()
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	if job.Schedule == "" {
+		return nil
+	}
+
+	cmd = exec.Command("/usr/bin/systemctl", "enable", timerPath)
+	cmd.Env = os.Environ()
+	err = cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // DeleteJob deletes a Job from the database

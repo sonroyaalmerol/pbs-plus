@@ -65,6 +65,11 @@ func main() {
 			return
 		}
 
+		if *jobTask.LastRunState == "" {
+			fmt.Println("A job is still running, skipping this schedule.")
+			return
+		}
+
 		_, err = jobs.RunJob(jobTask, storeInstance, nil)
 		if err != nil {
 			fmt.Println(err)
