@@ -44,7 +44,7 @@ func RefreshFileToken(storeInstance *store.Store) {
 	}
 
 	authCookieParts := strings.Split(authCookie, ":")
-	if len(authCookie) <= 1 {
+	if len(authCookie) < 5 {
 		fmt.Printf("Invalid cookie: %s\n", authCookie)
 		return
 	}
