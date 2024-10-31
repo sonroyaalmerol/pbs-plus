@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 
 	"github.com/charlievieth/fastwalk"
 )
@@ -21,18 +20,25 @@ func GetExclusions(root string) ([]string, error) {
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			var skipDir bool
-			if pathErr, ok := err.(*os.PathError); ok {
-				if errno, ok := pathErr.Err.(syscall.Errno); ok && errno == syscall.ENOTSUP {
+			if _, ok := err.(*os.PathError); ok {
+				info, err := os.Lstat(path)
+				if err != nil {
 					storeMutex.Lock()
 					excludedPaths = append(excludedPaths, convertToGlobPattern(path, root))
 					storeMutex.Unlock()
-					skipDir = true
+				}
+
+				if info.Mode()&fs.ModeSymlink != 0 {
+					storeMutex.Lock()
+					excludedPaths = append(excludedPaths, convertToGlobPattern(path, root))
+					storeMutex.Unlock()
 				}
 			} else {
 				storeMutex.Lock()
 				excludedPaths = append(excludedPaths, convertToGlobPattern(path, root))
 				storeMutex.Unlock()
 			}
+
 			if skipDir {
 				return filepath.SkipDir
 			}
@@ -48,8 +54,5 @@ func GetExclusions(root string) ([]string, error) {
 
 func convertToGlobPattern(path, root string) string {
 	relPath, _ := filepath.Rel(root, path)
-	if d := filepath.Dir(relPath); d == "." {
-		return "*" + filepath.Base(relPath)
-	}
-	return relPath + (string(os.PathSeparator) + "*")
+	return relPath
 }
