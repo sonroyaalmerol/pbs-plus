@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,12 +43,7 @@ func RefreshFileToken(storeInstance *store.Store) {
 		}
 	}
 
-	decodedAuthCookie, err := url.QueryUnescape(authCookie)
-	if err != nil {
-		fmt.Printf("Invalid cookie: %s\n", authCookie)
-		fmt.Println(err)
-		return
-	}
+	decodedAuthCookie := strings.ReplaceAll(authCookie, "%3A", ":")
 
 	authCookieParts := strings.Split(decodedAuthCookie, ":")
 	if len(authCookieParts) < 5 {
@@ -61,7 +55,7 @@ func RefreshFileToken(storeInstance *store.Store) {
 
 	reqBody, err := json.Marshal(&TokenRequest{
 		Username: username,
-		Password: authCookie,
+		Password: decodedAuthCookie,
 	})
 
 	tokensReq, err := http.NewRequest(

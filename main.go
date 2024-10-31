@@ -20,6 +20,7 @@ var customJsFS embed.FS
 
 func main() {
 	jobRun := flag.String("job", "", "Job ID to execute")
+	flag.Parse()
 
 	mux := http.NewServeMux()
 
