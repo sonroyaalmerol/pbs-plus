@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -83,9 +84,11 @@ type NewAgentResp struct {
 }
 
 func getServerPublicKey(server string, publicKey string, basePath string) (*string, error) {
+	hostname, _ := os.Hostname()
 	reqBody, err := json.Marshal(map[string]string{
 		"public_key": publicKey,
 		"base_path":  basePath,
+		"hostname":   hostname,
 	})
 	if err != nil {
 		return nil, err

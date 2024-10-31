@@ -3,7 +3,6 @@ package targets
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 type NewAgentRequest struct {
 	PublicKey string `json:"public_key"`
 	BasePath  string `json:"base_path"`
+	Hostname  string `json:"hostname"`
 }
 
 func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *http.Request) {
@@ -77,13 +77,6 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 
 			clientIP = strings.Split(clientIP, ":")[0]
 
-			client, err := net.LookupAddr(clientIP)
-			if err == nil {
-				if len(client) > 0 {
-					clientIP = client[0]
-				}
-			}
-
 			privKey, pubKey, err := utils.GenerateKeyPair(4096)
 			privKeyDir := filepath.Join(store.DbBasePath, "agent_keys")
 
@@ -94,7 +87,7 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 			}
 
 			newTarget := store.Target{
-				Name: fmt.Sprintf("%s_%s", clientIP, reqParsed.BasePath),
+				Name: fmt.Sprintf("%s - %s", reqParsed.Hostname, reqParsed.BasePath),
 				Path: fmt.Sprintf("agent://%s/%s", clientIP, reqParsed.BasePath),
 			}
 

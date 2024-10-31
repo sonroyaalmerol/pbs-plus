@@ -60,8 +60,23 @@ func handleConnection(conn net.Conn, sshConfig *ssh.ServerConfig, baseDir string
 			continue
 		}
 
+		go handlePingPong(requests)
 		go handleRequests(requests)
 		go handleSFTP(channel, baseDir)
+	}
+}
+
+func handlePingPong(reqs <-chan *ssh.Request) {
+	for req := range reqs {
+		if req.Type == "ping" {
+			log.Println("Received ping request")
+			err := req.Reply(true, []byte("pong"))
+			if err != nil {
+				log.Println("Failed to reply to ping:", err)
+			}
+		} else {
+			log.Printf("Received unknown request type: %s", req.Type)
+		}
 	}
 }
 
