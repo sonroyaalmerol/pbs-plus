@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-	"sgl.com/pbs-ui/utils"
 )
 
 type SFTPConfig struct {
@@ -21,7 +20,7 @@ type SFTPConfig struct {
 }
 
 func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
-	privateKey, pubKey, err := utils.GenerateKeyPair(4096)
+	privateKey, pubKey, err := GenerateKeyPair(4096)
 	if err != nil {
 		log.Println("Failed to generate SSH key pair.")
 		return nil

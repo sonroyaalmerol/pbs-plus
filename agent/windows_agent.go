@@ -9,9 +9,9 @@ import (
 	"log"
 	"net/url"
 
+	"github.com/sonroyaalmerol/pbs-d2d-backup/agent/sftp"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/agent/windows"
 	"golang.org/x/crypto/ssh"
-	"sgl.com/pbs-ui/agent/sftp"
-	"sgl.com/pbs-ui/agent/windows"
 )
 
 func main() {
