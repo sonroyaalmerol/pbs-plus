@@ -1,4 +1,4 @@
-package sftp 
+package sftp
 
 import (
 	"crypto/rand"
