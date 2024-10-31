@@ -76,6 +76,10 @@ type TimerInfo struct {
 }
 
 func getNextSchedule(job *Job) (*time.Time, error) {
+	if job.Schedule == "" {
+		return nil, nil
+	}
+
 	cmd := exec.Command("systemctl", "list-timers", "--all")
 	cmd.Env = os.Environ()
 
@@ -95,11 +99,13 @@ func getNextSchedule(job *Job) (*time.Time, error) {
 		line := scanner.Text()
 		fields := strings.Fields(line)
 
-		if len(fields) < 6 {
+		if len(fields) < 10 {
 			continue
 		}
 
-		nextTime, err := time.Parse(layout, fields[0]+" "+fields[1]+" "+fields[2])
+		// Extract `NEXT` time with timezone
+		nextStr := strings.Join(fields[0:4], " ")
+		nextTime, err := time.Parse(layout, nextStr)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing Next time: %v", err)
 		}
