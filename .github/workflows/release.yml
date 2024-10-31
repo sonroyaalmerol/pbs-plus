@@ -21,7 +21,7 @@ jobs:
         executable_compression: upx 
   release-windows-amd64-agent:
     name: release agent windows/amd64
-    runs-on: windows
+    runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
     - uses: wangyoucao577/go-release-action@v1
