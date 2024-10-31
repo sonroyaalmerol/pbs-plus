@@ -23,6 +23,7 @@ func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
 	privateKey, pubKey, err := GenerateKeyPair(4096)
 	if err != nil {
 		log.Println("Failed to generate SSH key pair.")
+		log.Println(err)
 		return nil
 	}
 
