@@ -73,6 +73,8 @@ func RefreshFileToken(storeInstance *store.Store) {
 		bytes.NewBuffer(reqBody),
 	)
 
+	tokensReq.Header.Add("Content-Type", "application/json")
+
 	client := http.Client{
 		Timeout: time.Second * 10,
 		Transport: &http.Transport{
