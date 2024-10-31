@@ -135,9 +135,11 @@ func (store *Store) GetJob(id string) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	nextSchedUnix := nextSchedule.Unix()
 
-	job.NextRun = &nextSchedUnix
+	if nextSchedule != nil {
+		nextSchedUnix := nextSchedule.Unix()
+		job.NextRun = &nextSchedUnix
+	}
 
 	return &job, nil
 }
@@ -291,9 +293,12 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 		if err != nil {
 			return nil, err
 		}
-		nextSchedUnix := nextSchedule.Unix()
 
-		job.NextRun = &nextSchedUnix
+		if nextSchedule != nil {
+			nextSchedUnix := nextSchedule.Unix()
+			job.NextRun = &nextSchedUnix
+		}
+
 		jobs = append(jobs, job)
 	}
 
