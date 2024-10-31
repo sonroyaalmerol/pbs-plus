@@ -2,37 +2,82 @@ package targets
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 
 	"sgl.com/pbs-ui/store"
 	"sgl.com/pbs-ui/utils"
 )
 
+type NewAgentRequest struct {
+	PublicKey string `json:"public_key"`
+	BasePath  string `json:"base_path"`
+}
+
 func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
 			http.Error(w, "Invalid HTTP method", http.StatusBadRequest)
 		}
 
-		all, err := storeInstance.GetAllTargets()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+		if r.Method == http.MethodGet {
+			all, err := storeInstance.GetAllTargets()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+
+			digest, err := utils.CalculateDigest(all)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+
+			toReturn := TargetsResponse{
+				Data:   all,
+				Digest: digest,
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(toReturn)
+
 			return
 		}
 
-		digest, err := utils.CalculateDigest(all)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
+		if r.Method == http.MethodPost {
+			var reqParsed NewAgentRequest
+			err := json.NewDecoder(r.Body).Decode(&reqParsed)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 
-		toReturn := TargetsResponse{
-			Data:   all,
-			Digest: digest,
-		}
+			clientIP := r.RemoteAddr
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(toReturn)
+			forwarded := r.Header.Get("X-FORWARDED-FOR")
+			if forwarded != "" {
+				clientIP = forwarded
+			}
+
+			client, err := net.LookupAddr(clientIP)
+			if err == nil {
+				if len(client) > 0 {
+					clientIP = client[0]
+				}
+			}
+
+			newTarget := store.Target{
+				Name: fmt.Sprintf("%s_%s", clientIP, reqParsed.BasePath),
+				Path: fmt.Sprintf("agent://%s/%s", clientIP, reqParsed.BasePath),
+			}
+
+			err = storeInstance.CreateTarget(newTarget)
+			if err != nil {
+				json.NewEncoder(w).Encode(nil)
+				return
+			}
+		}
 	}
 }
 

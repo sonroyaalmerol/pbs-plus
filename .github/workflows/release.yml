@@ -15,7 +15,8 @@ jobs:
     - uses: wangyoucao577/go-release-action@v1
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        goos: linux
+        goos: linux windows
         goarch: amd64
         compress_assets: false
         executable_compression: upx 
+        project_path: . ./agent/.
