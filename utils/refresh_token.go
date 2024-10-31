@@ -44,6 +44,11 @@ func RefreshFileToken(storeInstance *store.Store) {
 	}
 
 	authCookieParts := strings.Split(authCookie, ":")
+	if len(authCookie) <= 1 {
+		fmt.Printf("Invalid cookie: %s\n", authCookie)
+		return
+	}
+
 	username := authCookieParts[1]
 
 	reqBody, err := json.Marshal(&TokenRequest{
