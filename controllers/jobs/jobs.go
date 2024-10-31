@@ -46,7 +46,7 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 			smbPath,
 			srcPath,
 			"-o",
-			fmt.Sprintf("username=%s,password=%s", os.Getenv("DOMAIN_USER"), os.Getenv("DOMAIN_PASS")),
+			fmt.Sprintf("domain=%s,username=%s,password=%s,mfsymlinks,ro,mapchars", os.Getenv("DOMAIN"), os.Getenv("DOMAIN_USER"), os.Getenv("DOMAIN_PASS")),
 		}
 
 		mnt := exec.Command("mount", mountArgs...)
@@ -69,13 +69,10 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 		"--repository",
 		job.Store,
 		"--change-detection-mode=metadata",
-	}
-
-	exclusions, err := utils.GetExclusions(srcPath)
-
-	for _, exclusion := range exclusions {
-		cmdArgs = append(cmdArgs, "--exclude")
-		cmdArgs = append(cmdArgs, exclusion)
+		"--exclude",
+		"System Volume Information",
+		"--exclude",
+		"$RECYCLE.BIN",
 	}
 
 	if job.Namespace != "" {
