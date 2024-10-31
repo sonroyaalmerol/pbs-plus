@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"sgl.com/pbs-ui/store"
-	"sgl.com/pbs-ui/utils"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/store"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/utils"
 )
 
 func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*store.Task, error) {

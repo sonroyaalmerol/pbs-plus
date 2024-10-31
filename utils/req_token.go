@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"sgl.com/pbs-ui/store"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/store"
 )
 
 func ExtractTokenFromRequest(r *http.Request) *store.Token {

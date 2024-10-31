@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	"sgl.com/pbs-ui/store"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/store"
 )
 
 func createProxy(target *url.URL) *httputil.ReverseProxy {

@@ -11,9 +11,9 @@ import (
 	"net/url"
 
 	"github.com/robfig/cron"
-	"sgl.com/pbs-ui/controllers/jobs"
-	"sgl.com/pbs-ui/controllers/targets"
-	"sgl.com/pbs-ui/store"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/controllers/jobs"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/controllers/targets"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/store"
 )
 
 //go:embed all:views

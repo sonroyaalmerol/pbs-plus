@@ -6,8 +6,8 @@ import (
 	"net"
 	"net/http"
 
-	"sgl.com/pbs-ui/store"
-	"sgl.com/pbs-ui/utils"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/store"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/utils"
 )
 
 type NewAgentRequest struct {

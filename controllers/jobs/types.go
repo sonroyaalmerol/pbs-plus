@@ -1,6 +1,6 @@
 package jobs
 
-import "sgl.com/pbs-ui/store"
+import "github.com/sonroyaalmerol/pbs-d2d-backup/store"
 
 type JobsResponse struct {
 	Data   []store.Job `json:"data"`
