@@ -28,18 +28,54 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 		return nil, err
 	}
 
-	fmt.Printf("Target found: %s\n", target.Name)
+	srcPath := target.Path
+
+	if strings.HasPrefix(target.Path, "smb://") {
+		smbPath := strings.TrimPrefix(target.Path, "smb:")
+
+		srcPath = fmt.Sprintf("/mnt/pbs-d2d-mounts/%s", strings.ReplaceAll(target.Name, " ", "-"))
+
+		err := os.MkdirAll(srcPath, 0700)
+		if err != nil {
+			return nil, err
+		}
+
+		mountArgs := []string{
+			"-t",
+			"cifs",
+			smbPath,
+			srcPath,
+			"-o",
+			fmt.Sprintf("username=%s,password=%s", os.Getenv("DOMAIN_USER"), os.Getenv("DOMAIN_PASS")),
+		}
+
+		mnt := exec.Command("mount", mountArgs...)
+		mnt.Env = os.Environ()
+
+		mnt.Stdout = os.Stdout
+		mnt.Stderr = os.Stderr
+
+		fmt.Printf("Mount command composed: %s\n", mnt.String())
+
+		err = mnt.Start()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	cmdArgs := []string{
 		"backup",
-		fmt.Sprintf("%s.pxar:%s", strings.ReplaceAll(job.Target, " ", "-"), target.Path),
+		fmt.Sprintf("%s.pxar:%s", strings.ReplaceAll(job.Target, " ", "-"), srcPath),
 		"--repository",
 		job.Store,
 		"--change-detection-mode=metadata",
-		"--exclude",
-		"System Volume Information",
-		"--exclude",
-		"$RECYCLE.BIN",
+	}
+
+	exclusions, err := utils.GetExclusions(srcPath)
+
+	for _, exclusion := range exclusions {
+		cmdArgs = append(cmdArgs, "--exclude")
+		cmdArgs = append(cmdArgs, exclusion)
 	}
 
 	if job.Namespace != "" {
