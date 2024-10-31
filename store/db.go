@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,8 +37,8 @@ type Target struct {
 
 // Store holds the database instance
 type Store struct {
-	Db      *sql.DB
-	LastReq *http.Request
+	Db        *sql.DB
+	LastToken *Token
 }
 
 // Initialize initializes the database connection and returns a Store instance
@@ -114,7 +113,7 @@ func (store *Store) GetJob(id string) (*Job, error) {
 	}
 
 	if job.LastRunUpid != nil {
-		task, err := GetTaskByUPID(*job.LastRunUpid, store.LastReq)
+		task, err := GetTaskByUPID(*job.LastRunUpid, store.LastToken)
 		if err != nil {
 			return nil, err
 		}
@@ -262,7 +261,7 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 		}
 
 		if job.LastRunUpid != nil {
-			task, err := GetTaskByUPID(*job.LastRunUpid, store.LastReq)
+			task, err := GetTaskByUPID(*job.LastRunUpid, store.LastToken)
 			if err != nil {
 				return nil, err
 			}

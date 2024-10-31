@@ -1,4 +1,4 @@
-package utils
+package store
 
 import (
 	"bytes"
@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"sgl.com/pbs-ui/store"
 )
 
 type Token struct {
@@ -30,19 +28,12 @@ type TokenRequest struct {
 	Password string `json:"password"`
 }
 
-func RefreshFileToken(storeInstance *store.Store) {
-	if storeInstance.LastReq == nil {
+func RefreshFileToken(storeInstance *Store) {
+	if storeInstance.LastToken == nil {
 		return
 	}
 
-	authCookie := ""
-	for _, cookie := range storeInstance.LastReq.Cookies() {
-		if cookie.Name == "PBSAuthCookie" {
-			authCookie = cookie.Value
-			break
-		}
-	}
-
+	authCookie := storeInstance.LastToken.Ticket
 	decodedAuthCookie := strings.ReplaceAll(authCookie, "%3A", ":")
 
 	authCookieParts := strings.Split(decodedAuthCookie, ":")
@@ -62,7 +53,7 @@ func RefreshFileToken(storeInstance *store.Store) {
 		http.MethodPost,
 		fmt.Sprintf(
 			"%s/api2/json/access/ticket",
-			store.ProxyTargetURL,
+			ProxyTargetURL,
 		),
 		bytes.NewBuffer(reqBody),
 	)
@@ -96,7 +87,7 @@ func RefreshFileToken(storeInstance *store.Store) {
 	}
 
 	tokenFileContent, _ := json.Marshal(tokenStruct.Data)
-	file, err := os.OpenFile(filepath.Join(store.DbBasePath, "cookies.json"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	file, err := os.OpenFile(filepath.Join(DbBasePath, "cookies.json"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -111,7 +102,7 @@ func RefreshFileToken(storeInstance *store.Store) {
 }
 
 func ReadToken() (*Token, error) {
-	jsonFile, err := os.Open(filepath.Join(store.DbBasePath, "cookies.json"))
+	jsonFile, err := os.Open(filepath.Join(DbBasePath, "cookies.json"))
 	if err != nil {
 		return nil, err
 	}

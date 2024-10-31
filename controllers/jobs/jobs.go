@@ -16,9 +16,9 @@ import (
 	"sgl.com/pbs-ui/utils"
 )
 
-func RunJob(job *store.Job, storeInstance *store.Store, r *http.Request) (*store.Task, error) {
-	if r != nil {
-		storeInstance.LastReq = r
+func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*store.Task, error) {
+	if token != nil {
+		storeInstance.LastToken = token
 	}
 
 	fmt.Printf("Job started: %s\n", job.ID)
@@ -76,7 +76,7 @@ func RunJob(job *store.Job, storeInstance *store.Store, r *http.Request) (*store
 		time.Sleep(time.Millisecond * 100)
 	}
 
-	task, err := store.GetMostRecentTask(job, storeInstance.LastReq)
+	task, err := store.GetMostRecentTask(job, storeInstance.LastToken)
 	if err != nil {
 		fmt.Printf("error getting task: %v\n", err)
 
@@ -107,7 +107,7 @@ func RunJob(job *store.Job, storeInstance *store.Store, r *http.Request) (*store
 
 		fmt.Printf("done waiting, closing task\n")
 
-		taskFound, err := store.GetTaskByUPID(task.UPID, storeInstance.LastReq)
+		taskFound, err := store.GetTaskByUPID(task.UPID, storeInstance.LastToken)
 		if err != nil {
 			fmt.Printf("error updating job: %v\n", err)
 			return
@@ -133,7 +133,7 @@ func D2DJobHandler(storeInstance *store.Store) func(http.ResponseWriter, *http.R
 			http.Error(w, "Invalid HTTP method", http.StatusBadRequest)
 		}
 
-		storeInstance.LastReq = r
+		storeInstance.LastToken = utils.ExtractTokenFromRequest(r)
 
 		allJobs, err := storeInstance.GetAllJobs()
 		if err != nil {
@@ -175,7 +175,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			return
 		}
 
-		task, err := RunJob(job, storeInstance, r)
+		task, err := RunJob(job, storeInstance, utils.ExtractTokenFromRequest(r))
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			response.Message = err.Error()
@@ -231,7 +231,7 @@ func ExtJsJobHandler(storeInstance *store.Store) func(http.ResponseWriter, *http
 			return
 		}
 
-		storeInstance.LastReq = r
+		storeInstance.LastToken = utils.ExtractTokenFromRequest(r)
 
 		response.Status = http.StatusOK
 		response.Success = true
@@ -245,7 +245,7 @@ func ExtJsJobSingleHandler(storeInstance *store.Store) func(http.ResponseWriter,
 		if r.Method != http.MethodPut && r.Method != http.MethodGet && r.Method != http.MethodDelete {
 			http.Error(w, "Invalid HTTP method", http.StatusBadRequest)
 		}
-		storeInstance.LastReq = r
+		storeInstance.LastToken = utils.ExtractTokenFromRequest(r)
 
 		w.Header().Set("Content-Type", "application/json")
 

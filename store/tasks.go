@@ -33,7 +33,7 @@ type Task struct {
 	ExitStatus string `json:"exitstatus"`
 }
 
-func GetMostRecentTask(job *Job, r *http.Request) (*Task, error) {
+func GetMostRecentTask(job *Job, token *Token) (*Task, error) {
 	tasksReq, err := http.NewRequest(
 		http.MethodGet,
 		fmt.Sprintf(
@@ -43,12 +43,13 @@ func GetMostRecentTask(job *Job, r *http.Request) (*Task, error) {
 		),
 		nil,
 	)
-	tasksReq.Header.Set("Csrfpreventiontoken", r.Header.Get("Csrfpreventiontoken"))
-	tasksReq.Header.Set("User-Agent", r.Header.Get("User-Agent"))
+	tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
 
-	for _, cookie := range r.Cookies() {
-		tasksReq.AddCookie(cookie)
-	}
+	tasksReq.AddCookie(&http.Cookie{
+		Name:  "PBSAuthCookie",
+		Value: token.Ticket,
+		Path:  "/",
+	})
 
 	client := http.Client{
 		Timeout: time.Second * 10,
@@ -81,7 +82,7 @@ func GetMostRecentTask(job *Job, r *http.Request) (*Task, error) {
 	return &tasksStruct.Data[0], nil
 }
 
-func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
+func GetTaskByUPID(upid string, token *Token) (*Task, error) {
 	tasksReq, err := http.NewRequest(
 		http.MethodGet,
 		fmt.Sprintf(
@@ -91,12 +92,13 @@ func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
 		),
 		nil,
 	)
-	tasksReq.Header.Set("Csrfpreventiontoken", r.Header.Get("Csrfpreventiontoken"))
-	tasksReq.Header.Set("User-Agent", r.Header.Get("User-Agent"))
+	tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
 
-	for _, cookie := range r.Cookies() {
-		tasksReq.AddCookie(cookie)
-	}
+	tasksReq.AddCookie(&http.Cookie{
+		Name:  "PBSAuthCookie",
+		Value: token.Ticket,
+		Path:  "/",
+	})
 
 	client := http.Client{
 		Timeout: time.Second * 10,
@@ -123,7 +125,7 @@ func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
 	}
 
 	if taskStruct.Data.Status == "stopped" {
-		endTime, err := GetTaskEndTime(&taskStruct.Data, r)
+		endTime, err := GetTaskEndTime(&taskStruct.Data, token)
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +135,7 @@ func GetTaskByUPID(upid string, r *http.Request) (*Task, error) {
 	return &taskStruct.Data, nil
 }
 
-func GetTaskEndTime(task *Task, r *http.Request) (int64, error) {
+func GetTaskEndTime(task *Task, token *Token) (int64, error) {
 	nextPage := true
 	var tasksStruct TasksResponse
 
@@ -150,12 +152,13 @@ func GetTaskEndTime(task *Task, r *http.Request) (int64, error) {
 			),
 			nil,
 		)
-		tasksReq.Header.Set("Csrfpreventiontoken", r.Header.Get("Csrfpreventiontoken"))
-		tasksReq.Header.Set("User-Agent", r.Header.Get("User-Agent"))
+		tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
 
-		for _, cookie := range r.Cookies() {
-			tasksReq.AddCookie(cookie)
-		}
+		tasksReq.AddCookie(&http.Cookie{
+			Name:  "PBSAuthCookie",
+			Value: token.Ticket,
+			Path:  "/",
+		})
 
 		client := http.Client{
 			Timeout: time.Second * 10,

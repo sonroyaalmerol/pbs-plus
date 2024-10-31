@@ -12,7 +12,6 @@ import (
 	"sgl.com/pbs-ui/controllers/jobs"
 	"sgl.com/pbs-ui/controllers/targets"
 	"sgl.com/pbs-ui/store"
-	"sgl.com/pbs-ui/utils"
 )
 
 //go:embed all:views
@@ -42,23 +41,15 @@ func main() {
 	}
 
 	if *jobRun != "" {
-		token, err := utils.ReadToken()
+		token, err := store.ReadToken()
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 
-		ticketCookie := http.Cookie{
-			Name:  "PBSAuthCookie",
-			Value: token.Ticket,
-			Path:  "/",
+		if storeInstance.LastToken == nil {
+			storeInstance.LastToken = token
 		}
-		if storeInstance.LastReq == nil {
-			storeInstance.LastReq = new(http.Request)
-		}
-
-		storeInstance.LastReq.AddCookie(&ticketCookie)
-		storeInstance.LastReq.Header.Add("csrfpreventiontoken", token.CSRFToken)
 
 		jobTask, err := storeInstance.GetJob(*jobRun)
 		if err != nil {
@@ -81,7 +72,7 @@ func main() {
 
 	c := cron.New()
 	c.AddFunc("*/5 * * * *", func() {
-		utils.RefreshFileToken(storeInstance)
+		store.RefreshFileToken(storeInstance)
 	})
 	c.Start()
 
