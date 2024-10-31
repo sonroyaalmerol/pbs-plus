@@ -31,4 +31,5 @@ jobs:
         goarch: amd64
         compress_assets: false
         executable_compression: upx 
-        project_path: ./agent
+        binary_name: pbs-d2d-agent
+        project_path: ./agent/...
