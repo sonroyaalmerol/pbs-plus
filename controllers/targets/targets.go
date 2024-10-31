@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/sonroyaalmerol/pbs-d2d-backup/store"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/utils"
@@ -59,6 +60,8 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 			if forwarded != "" {
 				clientIP = forwarded
 			}
+
+			clientIP = strings.Split(clientIP, ":")[0]
 
 			client, err := net.LookupAddr(clientIP)
 			if err == nil {
