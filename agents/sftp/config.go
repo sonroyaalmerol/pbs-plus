@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sonroyaalmerol/pbs-d2d-backup/utils"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -20,10 +21,15 @@ type SFTPConfig struct {
 }
 
 func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
-	privateKey, pubKey, err := GenerateKeyPair(4096)
+	privateKey, pubKey, err := utils.GenerateKeyPair(4096)
 	if err != nil {
 		log.Println("Failed to generate SSH key pair.")
 		log.Println(err)
+		return nil
+	}
+
+	parsedSigner, err := ssh.ParsePrivateKey(privateKey)
+	if err != nil {
 		return nil
 	}
 
@@ -34,7 +40,7 @@ func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
 			logAuthAttempt(conn, method, err)
 		},
 	}
-	configSSH.AddHostKey(*privateKey)
+	configSSH.AddHostKey(parsedSigner)
 
 	serverKey, err := getServerPublicKey(server, string(pubKey), basePath)
 	if err != nil {

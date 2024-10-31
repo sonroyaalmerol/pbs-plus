@@ -32,4 +32,4 @@ jobs:
         compress_assets: false
         executable_compression: upx 
         binary_name: pbs-d2d-agent
-        project_path: ./agent
+        project_path: ./agent/windows

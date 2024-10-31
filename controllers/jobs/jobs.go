@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,26 +31,37 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 
 	srcPath := target.Path
 
-	if strings.HasPrefix(target.Path, "smb://") {
-		smbPath := strings.TrimPrefix(target.Path, "smb:")
-
-		srcPath = fmt.Sprintf("/mnt/pbs-d2d-mounts/%s", strings.ReplaceAll(target.Name, " ", "-"))
-
-		err := os.MkdirAll(srcPath, 0700)
+	if strings.HasPrefix(target.Path, "agent://") {
+		agentPath := strings.TrimPrefix(target.Path, "agent://")
+		agentPathParts := strings.Split(agentPath, "/")
+		agentHost := agentPathParts[0]
+		agentDrive := agentPathParts[1]
+		agentDriveRune := []rune(agentDrive)[0]
+		agentPort, err := utils.DriveLetterPort(agentDriveRune)
 		if err != nil {
 			return nil, err
 		}
 
-		mountArgs := []string{
-			"-t",
-			"cifs",
-			smbPath,
-			srcPath,
-			"-o",
-			fmt.Sprintf("domain=%s,username=%s,password=%s,mfsymlinks,ro,mapchars", os.Getenv("DOMAIN"), os.Getenv("DOMAIN_USER"), os.Getenv("DOMAIN_PASS")),
+		srcPath = fmt.Sprintf("/mnt/pbs-d2d-mounts/%s", strings.ReplaceAll(target.Name, " ", "-"))
+
+		err = os.MkdirAll(srcPath, 0700)
+		if err != nil {
+			return nil, err
 		}
 
-		mnt := exec.Command("mount", mountArgs...)
+		privKeyDir := filepath.Join(store.DbBasePath, "agent_keys")
+		privKeyFile := filepath.Join(privKeyDir, fmt.Sprintf("%s.key", job.Target))
+
+		mountArgs := []string{
+			"-o",
+			fmt.Sprintf("allow_other,default_permissions,IdentityFile=%s", privKeyFile),
+			"-p",
+			agentPort,
+			fmt.Sprintf("proxmox@%s:/", agentHost),
+			srcPath,
+		}
+
+		mnt := exec.Command("sshfs", mountArgs...)
 		mnt.Env = os.Environ()
 
 		mnt.Stdout = os.Stdout
@@ -57,7 +69,7 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 
 		fmt.Printf("Mount command composed: %s\n", mnt.String())
 
-		err = mnt.Start()
+		err = mnt.Run()
 		if err != nil {
 			return nil, err
 		}
@@ -132,6 +144,12 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 	fmt.Printf("Updated job: %s\n", job.ID)
 
 	go func() {
+		defer func() {
+			umount := exec.Command("umount", srcPath)
+			umount.Env = os.Environ()
+
+			_ = umount.Start()
+		}()
 		fmt.Printf("cmd wait goroutine started\n")
 		err = cmd.Wait()
 		if err != nil {

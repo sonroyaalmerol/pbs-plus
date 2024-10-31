@@ -1,4 +1,4 @@
-package sftp
+package utils
 
 import (
 	"crypto/rand"
@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func GenerateKeyPair(bitSize int) (*ssh.Signer, []byte, error) {
+func GenerateKeyPair(bitSize int) ([]byte, []byte, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, bitSize)
 	if err != nil {
 		return nil, nil, err
@@ -26,12 +26,8 @@ func GenerateKeyPair(bitSize int) (*ssh.Signer, []byte, error) {
 	}
 
 	encoded := encodePrivateKeyToPEM(privateKey)
-	parsedSigner, err := ssh.ParsePrivateKey(encoded)
-	if err != nil {
-		return nil, nil, err
-	}
 
-	return &parsedSigner, publicKey, nil
+	return encoded, publicKey, nil
 }
 
 func encodePrivateKeyToPEM(privateKey *rsa.PrivateKey) []byte {

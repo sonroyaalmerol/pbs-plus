@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/sonroyaalmerol/pbs-d2d-backup/store"
@@ -54,6 +56,18 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 				return
 			}
 
+			knownHosts, err := os.OpenFile("~/.ssh/known_hosts", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			defer knownHosts.Close()
+
+			if _, err = knownHosts.WriteString(fmt.Sprintf("\n%s", reqParsed.PublicKey)); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
 			clientIP := r.RemoteAddr
 
 			forwarded := r.Header.Get("X-FORWARDED-FOR")
@@ -70,14 +84,38 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 				}
 			}
 
+			privKey, pubKey, err := utils.GenerateKeyPair(4096)
+			privKeyDir := filepath.Join(store.DbBasePath, "agent_keys")
+
+			err = os.MkdirAll(privKeyDir, 0700)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
 			newTarget := store.Target{
 				Name: fmt.Sprintf("%s_%s", clientIP, reqParsed.BasePath),
 				Path: fmt.Sprintf("agent://%s/%s", clientIP, reqParsed.BasePath),
 			}
 
+			privKeyFile, err := os.OpenFile(filepath.Join(privKeyDir, fmt.Sprintf("%s.key", newTarget.Name)), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			defer privKeyFile.Close()
+
+			_, err = privKeyFile.Write(privKey)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
 			err = storeInstance.CreateTarget(newTarget)
 			if err != nil {
-				json.NewEncoder(w).Encode(nil)
+				json.NewEncoder(w).Encode(&map[string]string{
+					"public_key": string(pubKey),
+				})
 				return
 			}
 		}

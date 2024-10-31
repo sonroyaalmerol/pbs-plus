@@ -1,4 +1,4 @@
-module github.com/sonroyaalmerol/pbs-d2d-backup 
+module github.com/sonroyaalmerol/pbs-d2d-backup
 
 go 1.23.0
 

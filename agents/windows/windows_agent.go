@@ -1,5 +1,3 @@
-//go:build windows
-
 package main
 
 import (
@@ -9,8 +7,9 @@ import (
 	"log"
 	"net/url"
 
-	"github.com/sonroyaalmerol/pbs-d2d-backup/agent/sftp"
-	"github.com/sonroyaalmerol/pbs-d2d-backup/agent/windows"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/agents/sftp"
+	winUtils "github.com/sonroyaalmerol/pbs-d2d-backup/agents/windows/utils"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/utils"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -25,7 +24,7 @@ func main() {
 	}
 
 	// Reserve port 33450-33476
-	drives := windows.GetLocalDrives()
+	drives := winUtils.GetLocalDrives()
 	ctx := context.Background()
 
 	for _, driveLetter := range drives {
@@ -36,7 +35,7 @@ func main() {
 			log.Fatal("SFTP config invalid")
 		}
 
-		port, err := windows.DriveLetterPort(rune)
+		port, err := utils.DriveLetterPort(rune)
 		if err != nil {
 			log.Fatalf("Unable to map letter to port: %v", err)
 		}
