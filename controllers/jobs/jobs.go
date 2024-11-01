@@ -65,7 +65,7 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 
 		mountArgs := []string{
 			"-o",
-			fmt.Sprintf("allow_other,default_permissions,IdentityFile=%s", privKeyFile),
+			fmt.Sprintf("allow_other,ro,IdentityFile=\"%s\"", privKeyFile),
 			"-p",
 			agentPort,
 			fmt.Sprintf("proxmox@%s:/", agentHost),
@@ -92,10 +92,6 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 		"--repository",
 		job.Store,
 		"--change-detection-mode=metadata",
-		"--exclude",
-		"System Volume Information",
-		"--exclude",
-		"$RECYCLE.BIN",
 	}
 
 	if job.Namespace != "" {

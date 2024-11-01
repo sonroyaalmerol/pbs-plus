@@ -4,6 +4,7 @@ package sftp
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -16,12 +17,15 @@ type FileLister struct {
 }
 
 func (fl *FileLister) ListAt(fileList []os.FileInfo, offset int64) (int, error) {
-	if int(offset) >= len(fl.files) {
-		return 0, nil
+	if offset >= int64(len(fl.files)) {
+		return 0, io.EOF
 	}
 
-	n := copy(fileList, fl.files[offset:])
-	return n, nil
+	if n := copy(fileList, fl.files[offset:]); n < len(fl.files) {
+		return n, io.EOF
+	} else {
+		return n, nil
+	}
 }
 
 func (h *SftpHandler) FileLister(dirPath string) (*FileLister, error) {

@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
-func Serve(ctx context.Context, sshConfig *ssh.ServerConfig, address, port string, baseDir string) {
+func Serve(ctx context.Context, wg *sync.WaitGroup, sshConfig *ssh.ServerConfig, address, port string, baseDir string) {
+	defer wg.Done()
 	listenAt := fmt.Sprintf("%s:%s", address, port)
 	listener, err := net.Listen("tcp", listenAt)
 	if err != nil {
@@ -45,6 +47,7 @@ func handleConnection(conn net.Conn, sshConfig *ssh.ServerConfig, baseDir string
 	sconn, chans, reqs, err := ssh.NewServerConn(conn, sshConfig)
 	if err != nil {
 		log.Printf("failed to perform SSH handshake: %v", err)
+		log.Println(sshConfig)
 		return
 	}
 	defer sconn.Close()

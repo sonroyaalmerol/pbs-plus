@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"sync"
 
 	"github.com/sonroyaalmerol/pbs-d2d-backup/agents/sftp"
 	winUtils "github.com/sonroyaalmerol/pbs-d2d-backup/agents/windows/utils"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/utils"
-	"golang.org/x/crypto/ssh"
 )
 
 func main() {
@@ -29,6 +29,7 @@ func main() {
 	drives := winUtils.GetLocalDrives()
 	ctx := context.Background()
 
+	var wg sync.WaitGroup
 	for _, driveLetter := range drives {
 		rune := []rune(driveLetter)[0]
 
@@ -42,6 +43,9 @@ func main() {
 			log.Fatalf("Unable to map letter to port: %v", err)
 		}
 
-		go sftp.Serve(ctx, &ssh.ServerConfig{}, "0.0.0.0", port, fmt.Sprintf("%s:\\", driveLetter))
+		wg.Add(1)
+		go sftp.Serve(ctx, &wg, sftpConfig.ServerConfig, "0.0.0.0", port, fmt.Sprintf("%s:\\", driveLetter))
 	}
+
+	wg.Wait()
 }

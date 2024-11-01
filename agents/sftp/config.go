@@ -48,21 +48,24 @@ func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
 		return nil
 	}
 
-	jsonFile, err := os.Open(filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", basePath)))
+	savedConfigPath := filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", basePath))
+	jsonFile, err := os.Open(savedConfigPath)
 	if err == nil {
-		defer jsonFile.Close()
 		byteContent, err := io.ReadAll(jsonFile)
 		if err == nil {
-			err = json.Unmarshal([]byte(byteContent), &newSftpConfig)
-			if err != nil {
+			err = json.Unmarshal(byteContent, &newSftpConfig)
+			if err == nil {
+				log.Printf("Using existing config: %s\n", savedConfigPath)
+			} else {
 				log.Println(err)
 			}
 		}
 	}
+	jsonFile.Close()
 
 	configSSH := &ssh.ServerConfig{
 		NoClientAuth:  false,
-		ServerVersion: "PBS-D2D-Agent",
+		ServerVersion: "SSH-2.0-PBS-D2D-Agent",
 		AuthLogCallback: func(conn ssh.ConnMetadata, method string, err error) {
 			logAuthAttempt(conn, method, err)
 		},
@@ -82,7 +85,15 @@ func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
 		newSftpConfig.PrivateKey = privateKey
 		newSftpConfig.PublicKey = pubKey
 
-		knownHosts, err := os.OpenFile(filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", basePath)), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+		serverKey, err = getServerPublicKey(server, string(pubKey), basePath)
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
+
+		newSftpConfig.ServerKey = []byte(*serverKey)
+
+		knownHosts, err := os.OpenFile(filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", basePath)), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 		if err != nil {
 			log.Println(err)
 		}
@@ -94,15 +105,6 @@ func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
 				log.Println(err)
 			}
 		}
-
-		serverKey, err = getServerPublicKey(server, string(pubKey), basePath)
-		if err != nil {
-			log.Println(err)
-			return nil
-		}
-
-		newSftpConfig.ServerKey = []byte(*serverKey)
-
 	} else {
 		privateKey = newSftpConfig.PrivateKey
 		pubKey = newSftpConfig.PublicKey
@@ -118,8 +120,9 @@ func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
 
 	configSSH.AddHostKey(parsedSigner)
 
-	parsedServerKey, err := ssh.ParsePublicKey([]byte(*serverKey))
+	parsedServerKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(*serverKey))
 	if err != nil {
+		log.Println(*serverKey)
 		log.Println(err)
 		return nil
 	}

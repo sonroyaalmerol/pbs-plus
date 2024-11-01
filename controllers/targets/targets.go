@@ -56,20 +56,8 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 				return
 			}
 
-			homeDir, err := os.UserHomeDir()
+			err = utils.AddHostToKnownHosts(reqParsed.Hostname, reqParsed.BasePath, reqParsed.PublicKey)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-
-			knownHosts, err := os.OpenFile(filepath.Join(homeDir, ".ssh", "known_hosts"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			defer knownHosts.Close()
-
-			if _, err = knownHosts.WriteString(fmt.Sprintf("\n%s", reqParsed.PublicKey)); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
@@ -145,6 +133,14 @@ func ExtJsTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			return
 		}
 
+		if !utils.IsValid(r.FormValue("path")) {
+			response.Message = fmt.Sprintf("Invalid path: %s", r.FormValue("path"))
+			response.Status = http.StatusBadGateway
+			response.Success = false
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+
 		newTarget := store.Target{
 			Name: r.FormValue("name"),
 			Path: r.FormValue("path"),
@@ -175,7 +171,7 @@ func ExtJsTargetSingleHandler(storeInstance *store.Store) func(http.ResponseWrit
 		w.Header().Set("Content-Type", "application/json")
 
 		if r.Method == http.MethodPut {
-			target, err := storeInstance.GetTarget(r.PathValue("target"))
+			err := r.ParseForm()
 			if err != nil {
 				response.Message = err.Error()
 				response.Status = http.StatusBadGateway
@@ -184,7 +180,15 @@ func ExtJsTargetSingleHandler(storeInstance *store.Store) func(http.ResponseWrit
 				return
 			}
 
-			err = r.ParseForm()
+			if !utils.IsValid(r.FormValue("path")) {
+				response.Message = fmt.Sprintf("Invalid path: %s", r.FormValue("path"))
+				response.Status = http.StatusBadGateway
+				response.Success = false
+				json.NewEncoder(w).Encode(response)
+				return
+			}
+
+			target, err := storeInstance.GetTarget(r.PathValue("target"))
 			if err != nil {
 				response.Message = err.Error()
 				response.Status = http.StatusBadGateway
