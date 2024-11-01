@@ -85,7 +85,13 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 				Path: fmt.Sprintf("agent://%s/%s", clientIP, reqParsed.BasePath),
 			}
 
-			privKeyFile, err := os.OpenFile(filepath.Join(privKeyDir, fmt.Sprintf("%s.key", newTarget.Name)), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+			privKeyFile, err := os.OpenFile(
+				filepath.Join(
+					privKeyDir,
+					strings.ReplaceAll(fmt.Sprintf("%s.key", newTarget.Name), " ", "-"),
+				),
+				os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return

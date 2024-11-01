@@ -61,11 +61,11 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 		}
 
 		privKeyDir := filepath.Join(store.DbBasePath, "agent_keys")
-		privKeyFile := filepath.Join(privKeyDir, fmt.Sprintf("%s.key", job.Target))
+		privKeyFile := filepath.Join(privKeyDir, strings.ReplaceAll(fmt.Sprintf("%s.key", job.Target), " ", "-"))
 
 		mountArgs := []string{
 			"-o",
-			fmt.Sprintf("allow_other,ro,IdentityFile=\"\\\"%s\\\"\"", privKeyFile),
+			fmt.Sprintf("allow_other,ro,IdentityFile=%s", privKeyFile),
 			"-p",
 			agentPort,
 			fmt.Sprintf("proxmox@%s:/", agentHost),
