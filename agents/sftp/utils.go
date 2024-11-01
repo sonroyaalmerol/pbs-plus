@@ -1,8 +1,12 @@
+//go:build windows
+
 package sftp
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/pkg/sftp"
 )
@@ -32,6 +36,11 @@ func (h *SftpHandler) FileLister(dirPath string) (*FileLister, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		fullPath := filepath.Join(dirPath, entry.Name())
+		if skipFile(fullPath, info) {
+			continue
+		}
 		fileInfos = append(fileInfos, info)
 	}
 
@@ -44,6 +53,10 @@ func (h *SftpHandler) FileStat(filename string) (*FileLister, error) {
 		return nil, err
 	}
 
+	if skipFile(filename, stat) {
+		return nil, fmt.Errorf("access denied or restricted file: %s", filename)
+	}
+
 	return &FileLister{files: []os.FileInfo{stat}}, nil
 }
 
@@ -53,4 +66,26 @@ func (h *SftpHandler) setFilePath(r *sftp.Request) {
 
 func (h *SftpHandler) fetch(path string, mode int) (*os.File, error) {
 	return os.OpenFile(path, mode, 0777)
+}
+
+func skipFile(path string, fileInfo os.FileInfo) bool {
+	restrictedDirs := []string{"$RECYCLE.BIN", "System Volume Information"}
+	for _, dir := range restrictedDirs {
+		if fileInfo.IsDir() && fileInfo.Name() == dir {
+			return true
+		}
+	}
+
+	if fileInfo.Mode()&os.ModeSymlink != 0 {
+		return true
+	}
+
+	if !fileInfo.IsDir() {
+		if _, err := os.Open(path); err != nil {
+			if pe, ok := err.(*os.PathError); ok && pe.Err == syscall.ERROR_ACCESS_DENIED {
+				return true
+			}
+		}
+	}
+	return false
 }
