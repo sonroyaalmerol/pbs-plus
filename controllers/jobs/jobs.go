@@ -17,6 +17,17 @@ import (
 	"github.com/sonroyaalmerol/pbs-d2d-backup/utils"
 )
 
+func unmount(srcPath string) {
+	if !strings.HasPrefix(srcPath, "/mnt/pbs-d2d-mounts") {
+		return
+	}
+
+	umount := exec.Command("umount", srcPath)
+	umount.Env = os.Environ()
+
+	_ = umount.Start()
+}
+
 func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*store.Task, error) {
 	if token != nil {
 		storeInstance.LastToken = token
@@ -105,6 +116,7 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 
 	err = cmd.Start()
 	if err != nil {
+		unmount(srcPath)
 		return nil, err
 	}
 
@@ -126,6 +138,7 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 		fmt.Printf("error getting task: %v\n", err)
 
 		_ = cmd.Process.Kill()
+		unmount(srcPath)
 
 		return nil, err
 	}
@@ -138,18 +151,14 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 		fmt.Printf("error updating job: %v\n", err)
 
 		_ = cmd.Process.Kill()
+		unmount(srcPath)
 
 		return nil, err
 	}
 	fmt.Printf("Updated job: %s\n", job.ID)
 
 	go func() {
-		defer func() {
-			umount := exec.Command("umount", srcPath)
-			umount.Env = os.Environ()
-
-			_ = umount.Start()
-		}()
+		defer unmount(srcPath)
 		fmt.Printf("cmd wait goroutine started\n")
 		err = cmd.Wait()
 		if err != nil {
