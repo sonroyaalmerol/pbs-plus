@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/pkg/sftp"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/agents/windows/utils"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -97,8 +98,13 @@ func handleRequests(requests <-chan *ssh.Request) {
 func handleSFTP(channel ssh.Channel, baseDir string) {
 	defer channel.Close()
 
+	snapshot, err := utils.Snapshot(fmt.Sprintf("%s:\\", baseDir))
+	if err != nil {
+		log.Fatalf("failed to initialize snapshot: %s", err)
+	}
+
 	ctx := context.Background()
-	sftpHandler, err := NewSftpHandler(ctx, baseDir)
+	sftpHandler, err := NewSftpHandler(ctx, baseDir, snapshot)
 	if err != nil {
 		log.Fatalf("failed to initialize handler: %s", err)
 	}

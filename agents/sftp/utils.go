@@ -5,8 +5,10 @@ package sftp
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/pkg/sftp"
@@ -42,7 +44,7 @@ func (h *SftpHandler) FileLister(dirPath string) (*FileLister, error) {
 		}
 
 		fullPath := filepath.Join(dirPath, entry.Name())
-		if skipFile(fullPath, info) {
+		if skipFile(fullPath, info, false) {
 			continue
 		}
 		fileInfos = append(fileInfos, info)
@@ -52,12 +54,24 @@ func (h *SftpHandler) FileLister(dirPath string) (*FileLister, error) {
 }
 
 func (h *SftpHandler) FileStat(filename string) (*FileLister, error) {
-	stat, err := os.Lstat(filename)
-	if err != nil {
-		return nil, err
+	var stat fs.FileInfo
+	var err error
+
+	isRoot := strings.TrimPrefix(filename, h.SnapshotPath) == ""
+
+	if isRoot {
+		stat, err = os.Stat(filename)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		stat, err = os.Lstat(filename)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	if skipFile(filename, stat) {
+	if skipFile(filename, stat, isRoot) {
 		return nil, fmt.Errorf("access denied or restricted file: %s", filename)
 	}
 
@@ -65,14 +79,14 @@ func (h *SftpHandler) FileStat(filename string) (*FileLister, error) {
 }
 
 func (h *SftpHandler) setFilePath(r *sftp.Request) {
-	r.Filepath = filepath.Join(h.BasePath, filepath.Clean(r.Filepath))
+	r.Filepath = filepath.Join(h.SnapshotPath, filepath.Clean(r.Filepath))
 }
 
 func (h *SftpHandler) fetch(path string, mode int) (*os.File, error) {
 	return os.OpenFile(path, mode, 0777)
 }
 
-func skipFile(path string, fileInfo os.FileInfo) bool {
+func skipFile(path string, fileInfo os.FileInfo, isRoot bool) bool {
 	restrictedDirs := []string{"$RECYCLE.BIN", "System Volume Information"}
 	for _, dir := range restrictedDirs {
 		if fileInfo.IsDir() && fileInfo.Name() == dir {
@@ -80,7 +94,7 @@ func skipFile(path string, fileInfo os.FileInfo) bool {
 		}
 	}
 
-	if fileInfo.Mode()&os.ModeSymlink != 0 {
+	if !isRoot && fileInfo.Mode()&os.ModeSymlink != 0 {
 		return true
 	}
 

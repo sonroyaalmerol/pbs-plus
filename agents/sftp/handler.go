@@ -11,15 +11,17 @@ import (
 	"sync"
 
 	"github.com/pkg/sftp"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/agents/windows/utils"
 )
 
 type SftpHandler struct {
-	mu       sync.Mutex
-	BasePath string
+	mu           sync.Mutex
+	BasePath     string
+	SnapshotPath string
 }
 
-func NewSftpHandler(ctx context.Context, basePath string) (*sftp.Handlers, error) {
-	handler := &SftpHandler{BasePath: basePath}
+func NewSftpHandler(ctx context.Context, basePath string, snapshot *utils.WinVSSSnapshot) (*sftp.Handlers, error) {
+	handler := &SftpHandler{BasePath: basePath, SnapshotPath: snapshot.SnapshotPath}
 
 	return &sftp.Handlers{
 		FileGet:  handler,
