@@ -64,15 +64,21 @@ func RunJob(job *store.Job, storeInstance *store.Store, token *store.Token) (*st
 		privKeyFile := filepath.Join(privKeyDir, strings.ReplaceAll(fmt.Sprintf("%s.key", job.Target), " ", "-"))
 
 		mountArgs := []string{
-			"-o",
-			fmt.Sprintf("allow_other,ro,IdentityFile=%s", privKeyFile),
-			"-p",
-			agentPort,
-			fmt.Sprintf("proxmox@%s:/", agentHost),
-			srcPath,
+			"mount",
+			"--daemon",
+			"--read-only",
+			"--uid", "0",
+			"--gid", "0",
+			"--sftp-key-file", privKeyFile,
+			"--sftp-port", agentPort,
+			"--sftp-user", "proxmox",
+			"--sftp-host", agentHost,
+			"--allow-other",
+			"--sftp-shell-type", "unix",
+			":sftp:/", srcPath,
 		}
 
-		mnt := exec.Command("sshfs", mountArgs...)
+		mnt := exec.Command("rclone", mountArgs...)
 		mnt.Env = os.Environ()
 
 		mnt.Stdout = os.Stdout

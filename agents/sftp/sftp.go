@@ -65,7 +65,6 @@ func handleConnection(conn net.Conn, sshConfig *ssh.ServerConfig, baseDir string
 			continue
 		}
 
-		go handlePingPong(requests)
 		go handleRequests(requests)
 		go handleSFTP(channel, baseDir)
 	}
