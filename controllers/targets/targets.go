@@ -56,7 +56,13 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 				return
 			}
 
-			knownHosts, err := os.OpenFile("~/.ssh/known_hosts", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			knownHosts, err := os.OpenFile(filepath.Join(homeDir, ".ssh", "known_hosts"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return

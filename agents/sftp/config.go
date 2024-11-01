@@ -48,7 +48,7 @@ func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
 		return nil
 	}
 
-	jsonFile, err := os.Open(filepath.Join(configBasePath, fmt.Sprintf("%s_%s-sftp.json", server, basePath)))
+	jsonFile, err := os.Open(filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", basePath)))
 	if err == nil {
 		defer jsonFile.Close()
 		byteContent, err := io.ReadAll(jsonFile)
@@ -82,7 +82,7 @@ func InitializeSFTPConfig(server string, basePath string) *SFTPConfig {
 		newSftpConfig.PrivateKey = privateKey
 		newSftpConfig.PublicKey = pubKey
 
-		knownHosts, err := os.OpenFile(filepath.Join(configBasePath, fmt.Sprintf("%s_%s-sftp.json", server, basePath)), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+		knownHosts, err := os.OpenFile(filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", basePath)), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 		if err != nil {
 			log.Println(err)
 		}
@@ -192,7 +192,7 @@ func getServerPublicKey(server string, publicKey string, basePath string) (*stri
 	var newAgentStruct NewAgentResp
 	err = json.Unmarshal(newAgentBody, &newAgentStruct)
 	if err != nil {
-		fmt.Println(newAgentBody)
+		fmt.Println(string(newAgentBody))
 		return nil, err
 	}
 
