@@ -112,9 +112,15 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 
 			err = storeInstance.CreateTarget(newTarget)
 			if err != nil {
-				json.NewEncoder(w).Encode(&map[string]string{
+				w.Header().Set("Content-Type", "application/json")
+				err = json.NewEncoder(w).Encode(map[string]string{
 					"public_key": string(pubKey),
 				})
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+
 				return
 			}
 		}
