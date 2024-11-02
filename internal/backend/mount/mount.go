@@ -17,6 +17,10 @@ type AgentMount struct {
 }
 
 func Mount(target *store.Target) (*AgentMount, error) {
+	if !utils.IsValid("/usr/bin/rclone") {
+		return nil, fmt.Errorf("Mount: rclone is missing! Please install rclone first before backing up from agent.")
+	}
+
 	agentMount := &AgentMount{}
 
 	agentPath := strings.TrimPrefix(target.Path, "agent://")
