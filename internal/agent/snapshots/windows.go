@@ -10,12 +10,11 @@ import (
 	"path/filepath"
 	"time"
 
-	vss "github.com/jeromehadorn/vss"
+	"github.com/mxk/go-vss"
 )
 
 type WinVSSSnapshot struct {
 	SnapshotPath string
-	Snapshotter  *vss.Snapshotter
 	Id           string
 	Used         bool
 }
@@ -57,7 +56,7 @@ func getAppDataFolder() (string, error) {
 }
 
 func Snapshot(path string) (*WinVSSSnapshot, error) {
-	volName := filepath.VolumeName(path)
+	volName := filepath.VolumeName(fmt.Sprintf("%s:\\", path))
 	volName += "\\"
 
 	appDataFolder, err := getAppDataFolder()
@@ -65,23 +64,23 @@ func Snapshot(path string) (*WinVSSSnapshot, error) {
 		return nil, fmt.Errorf("Snapshot: error getting app data folder -> %w", err)
 	}
 
-	sn := vss.Snapshotter{}
+	snapshotPath := filepath.Join(appDataFolder, "VSS", path)
 
-	snapshot, err := sn.CreateSnapshot(volName, 180, true)
+	err = vss.CreateLink(snapshotPath, volName)
 	if err != nil {
 		return nil, fmt.Errorf("Snapshot: error creating snapshot -> %w", err)
 	}
 
-	_, err = symlinkSnapshot(filepath.Join(appDataFolder, "VSS"), snapshot.Id, snapshot.DeviceObjectPath)
+	sc, err := vss.Get(snapshotPath)
 	if err != nil {
-		sn.DeleteSnapshot(snapshot.Id)
-		return nil, fmt.Errorf("Snapshot: error symlinking snapshot -> %w", err)
+		_ = vss.Remove(snapshotPath)
+		return nil, fmt.Errorf("Snapshot: error getting snapshot details -> %w", err)
 	}
 
 	newSnapshot := WinVSSSnapshot{
-		SnapshotPath: filepath.Join(appDataFolder, "VSS", snapshot.Id),
-		Snapshotter:  &sn,
-		Id:           snapshot.Id,
+		SnapshotPath: snapshotPath,
+		Used:         false,
+		Id:           sc.ID,
 	}
 
 	go newSnapshot.closeOnStale()
@@ -107,9 +106,9 @@ func (instance *WinVSSSnapshot) closeOnStale() {
 }
 
 func (instance *WinVSSSnapshot) Close() error {
-	err := instance.Snapshotter.DeleteSnapshot(instance.Id)
+	err := vss.Remove(instance.Id)
 	if err != nil {
-		return fmt.Errorf("Close: error deleting snapshot %s -> %w", instance.Id, err)
+		return fmt.Errorf("Close: error deleting snapshot %s -> %w", instance.SnapshotPath, err)
 	}
 
 	return nil

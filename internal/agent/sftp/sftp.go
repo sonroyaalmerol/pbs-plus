@@ -99,7 +99,7 @@ func handleRequests(requests <-chan *ssh.Request) {
 func handleSFTP(channel ssh.Channel, baseDir string) {
 	defer channel.Close()
 
-	snapshot, err := snapshots.Snapshot(fmt.Sprintf("%s:\\", baseDir))
+	snapshot, err := snapshots.Snapshot(baseDir)
 	if err != nil {
 		log.Fatalf("failed to initialize snapshot: %s", err)
 	}
