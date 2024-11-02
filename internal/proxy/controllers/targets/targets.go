@@ -2,6 +2,7 @@ package targets
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -105,7 +106,7 @@ func ExtJsTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 		}
 
 		if !utils.IsValid(r.FormValue("path")) {
-			controllers.WriteErrorResponse(w, err)
+			controllers.WriteErrorResponse(w, fmt.Errorf("invalid path '%s'", r.FormValue("path")))
 			return
 		}
 
@@ -145,7 +146,7 @@ func ExtJsTargetSingleHandler(storeInstance *store.Store) func(http.ResponseWrit
 			}
 
 			if !utils.IsValid(r.FormValue("path")) {
-				controllers.WriteErrorResponse(w, err)
+				controllers.WriteErrorResponse(w, fmt.Errorf("invalid path '%s'", r.FormValue("path")))
 				return
 			}
 

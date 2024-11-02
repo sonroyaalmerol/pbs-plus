@@ -4,16 +4,21 @@ import (
 	"os"
 )
 
-func IsValid(fp string) bool {
-	if _, err := os.Stat(fp); err == nil {
-		return true
+func IsValid(path string) bool {
+	// Check if path is not empty and is an absolute path
+	if path == "" {
+		return false
 	}
 
-	var d []byte
-	if err := os.WriteFile(fp, d, 0644); err == nil {
-		os.Remove(fp)
-		return true
+	// Check if the path exists
+	_, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+		return false
 	}
 
-	return false
+	// Path exists, return true and no error
+	return true
 }

@@ -66,6 +66,21 @@ ExecStart=/usr/local/bin/pbs-d2d-backup -job="%s"`, job.ID, job.ID)
 	return nil
 }
 
+func deleteSchedule(id string) {
+	svcFilePath := fmt.Sprintf("proxmox-d2d-job-%s.service", strings.ReplaceAll(id, " ", "-"))
+	svcFullPath := filepath.Join(TimerBasePath, svcFilePath)
+
+	timerFilePath := fmt.Sprintf("proxmox-d2d-job-%s.timer", strings.ReplaceAll(id, " ", "-"))
+	timerFullPath := filepath.Join(TimerBasePath, timerFilePath)
+
+	_ = os.Remove(svcFullPath)
+	_ = os.Remove(timerFullPath)
+
+	cmd := exec.Command("/usr/bin/systemctl", "daemon-reload")
+	cmd.Env = os.Environ()
+	_ = cmd.Run()
+}
+
 type TimerInfo struct {
 	Next      time.Time
 	Left      string
@@ -80,15 +95,15 @@ func getNextSchedule(job *Job) (*time.Time, error) {
 		return nil, nil
 	}
 
-	cmd := exec.Command("systemctl", "list-timers", "--all")
+	timerUnit := fmt.Sprintf("proxmox-d2d-job-%s.timer", strings.ReplaceAll(job.ID, " ", "-"))
+
+	cmd := exec.Command("systemctl", "list-timers", "--all", "|", "grep", timerUnit)
 	cmd.Env = os.Environ()
 
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("getNextSchedule: error running systemctl command -> %w", err)
 	}
-
-	timerUnit := fmt.Sprintf("proxmox-d2d-job-%s.timer", strings.ReplaceAll(job.ID, " ", "-"))
 
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	layout := "Mon 2006-01-02 15:04:05 MST"
@@ -103,21 +118,13 @@ func getNextSchedule(job *Job) (*time.Time, error) {
 			continue
 		}
 
-		// Extract `NEXT` time with timezone
 		nextStr := strings.Join(fields[0:4], " ")
 		nextTime, err := time.Parse(layout, nextStr)
 		if err != nil {
 			return nil, fmt.Errorf("getNextSchedule: error parsing Next time -> %w", err)
 		}
 
-		timer := TimerInfo{
-			Next: nextTime,
-			Unit: fields[8],
-		}
-
-		if timer.Unit == timerUnit {
-			return &timer.Next, nil
-		}
+		return &nextTime, nil
 	}
 
 	if err := scanner.Err(); err != nil {
