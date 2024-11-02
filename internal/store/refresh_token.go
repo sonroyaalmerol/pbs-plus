@@ -32,6 +32,10 @@ type APITokenRequest struct {
 	Comment string `json:"comment"`
 }
 
+type APITokenResponse struct {
+	Data APIToken `json:"data"`
+}
+
 type APIToken struct {
 	TokenId string `json:"tokenid"`
 	Value   string `json:"value"`
@@ -104,16 +108,20 @@ func (token *Token) CreateAPIToken() (*APIToken, error) {
 		return nil, fmt.Errorf("CreateAPIToken: error reading response body -> %w", err)
 	}
 
-	var tokenStruct APIToken
+	var tokenStruct APITokenResponse
 	err = json.Unmarshal(tokensBody, &tokenStruct)
 	if err != nil {
 		return nil, fmt.Errorf("CreateAPIToken: error json unmarshal body -> %w", err)
 	}
 
-	return &tokenStruct, nil
+	return &tokenStruct.Data, nil
 }
 
 func (token *APIToken) SaveToFile() error {
+	if token == nil {
+		return nil
+	}
+
 	tokenFileContent, _ := json.Marshal(token)
 	file, err := os.OpenFile(filepath.Join(DbBasePath, "pbs-d2d-token.json"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
