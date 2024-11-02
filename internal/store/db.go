@@ -277,23 +277,6 @@ func (store *Store) DeleteTarget(name string) error {
 		return fmt.Errorf("DeleteTarget: error deleting target -> %w", err)
 	}
 
-	query = `SELECT id, target FROM disk_backup_job_status WHERE target = ?;`
-	rows, err := store.Db.Query(query, name)
-	if err != nil {
-		return fmt.Errorf("DeleteTarget: error getting job select query -> %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var job Job
-		err := rows.Scan(&job.ID, &job.Target)
-		if err != nil {
-			return fmt.Errorf("DeleteTarget: error scanning job row -> %w", err)
-		}
-
-		store.DeleteJob(job.ID)
-	}
-
 	return nil
 }
 

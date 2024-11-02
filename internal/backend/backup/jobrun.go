@@ -24,6 +24,10 @@ func RunBackup(job *store.Job, storeInstance *store.Store, token *store.Token) (
 		return nil, fmt.Errorf("RunBackup -> %w", err)
 	}
 
+	if target == nil {
+		return nil, fmt.Errorf("RunBackup: Target '%s' does not exist.", job.Target)
+	}
+
 	srcPath := target.Path
 
 	var agentMount *mount.AgentMount
