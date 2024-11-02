@@ -33,8 +33,6 @@ func main() {
 		log.Fatalf("Failed to parse target URL: %v", err)
 	}
 
-	proxy := proxy.CreateProxy(targetURL)
-
 	storeInstance, err := store.Initialize()
 	if err != nil {
 		if s != nil {
@@ -42,6 +40,8 @@ func main() {
 		}
 		log.Fatalf("Failed to initialize store: %v", err)
 	}
+
+	proxy := proxy.CreateProxy(targetURL, storeInstance)
 
 	err = storeInstance.CreateTables()
 	if err != nil {

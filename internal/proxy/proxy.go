@@ -13,7 +13,7 @@ import (
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/store"
 )
 
-func CreateProxy(target *url.URL) *httputil.ReverseProxy {
+func CreateProxy(target *url.URL, storeInstance *store.Store) *httputil.ReverseProxy {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	originalDirector := proxy.Director
 
@@ -22,6 +22,7 @@ func CreateProxy(target *url.URL) *httputil.ReverseProxy {
 	}
 
 	proxy.Director = func(req *http.Request) {
+		storeInstance.LastToken = ExtractTokenFromRequest(req)
 		originalDirector(req)
 	}
 

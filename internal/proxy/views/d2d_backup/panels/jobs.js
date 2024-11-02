@@ -62,10 +62,14 @@ Ext.define('PBS.config.DiskBackupJobView', {
 	    if (selection.length < 1) return;
 
 	    let id = selection[0].data.id;
+
+		  view.mask(gettext('Starting backup...'), 'x-mask-loading');
+
 	    Proxmox.Utils.API2Request({
 		method: 'POST',
 		url: "/d2d/backup/" + id,
 		success: function(response, opt) {
+        view.unmask();
 		    Ext.create('Proxmox.window.TaskViewer', {
 		        upid: response.result.data,
 		        taskDone: function(success) {
@@ -74,6 +78,7 @@ Ext.define('PBS.config.DiskBackupJobView', {
 		    }).show();
 		},
 		failure: function(response, opt) {
+        view.unmask();
 		    Ext.Msg.alert(gettext('Error'), response.htmlStatus);
 		},
 	    });
@@ -144,6 +149,8 @@ Ext.define('PBS.config.DiskBackupJobView', {
 	    xtype: 'proxmoxButton',
 	    text: gettext('Run now'),
 	    handler: 'runJob',
+      reference: 'd2dBackupRun',
+	    confirmMsg: gettext('Manually start backup job?'),
 	    disabled: true,
 	},
     ],

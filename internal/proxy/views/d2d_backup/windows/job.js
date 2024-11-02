@@ -77,13 +77,22 @@ Ext.define('PBS.D2DManagement.BackupJobEdit', {
 			xtype: 'pbsDataStoreSelector',
 			fieldLabel: gettext('Local Datastore'),
 			name: 'store',
+		    listeners: {
+			change: function(_, value) {
+			    let me = this;
+			    if (value) {
+				let namespace = me.up('window').down('pbsNamespaceSelector');
+				namespace.setDatastore(value);
+				namespace.setDisabled(false);
+			    }
+			},
 		    },
-		    {
-			xtype: 'textfield',
-			name: 'namespace',
-			fieldLabel: 'Namespace',
-			allowBlank: true,
-      editable: true,
+		    },
+        {
+      xtype: 'pbsNamespaceSelector',
+      fieldLabel: gettext('Namespace'),
+      disabled: true,
+      name: 'ns',
         },
 		],
 
