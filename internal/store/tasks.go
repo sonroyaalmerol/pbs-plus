@@ -99,6 +99,10 @@ func GetTaskByUPID(upid string, token *Token) (*Task, error) {
 		return nil, fmt.Errorf("GetTaskByUPID: error creating http request -> %w", err)
 	}
 
+	if token == nil {
+		return nil, fmt.Errorf("GetTaskByUPID: token is required -> %w", err)
+	}
+
 	tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
 
 	tasksReq.AddCookie(&http.Cookie{
