@@ -19,6 +19,7 @@ jobs:
         goarch: amd64
         compress_assets: false
         executable_compression: upx 
+        project_path: ./cmd/pbs_d2d_backup
   release-windows-amd64-agent:
     name: release agent windows/amd64
     runs-on: ubuntu-latest
@@ -32,4 +33,4 @@ jobs:
         compress_assets: false
         executable_compression: upx 
         binary_name: pbs-d2d-agent
-        project_path: ./agents/windows
+        project_path: ./cmd/pbs_windows_agent
