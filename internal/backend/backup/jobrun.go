@@ -14,11 +14,7 @@ import (
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/store"
 )
 
-func RunBackup(job *store.Job, storeInstance *store.Store, token *store.Token) (*store.Task, error) {
-	if token != nil {
-		storeInstance.LastToken = token
-	}
-
+func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) {
 	target, err := storeInstance.GetTarget(job.Target)
 	if err != nil {
 		return nil, fmt.Errorf("RunBackup -> %w", err)
@@ -87,7 +83,7 @@ func RunBackup(job *store.Job, storeInstance *store.Store, token *store.Token) (
 		time.Sleep(time.Millisecond * 100)
 	}
 
-	task, err := store.GetMostRecentTask(job, storeInstance.LastToken)
+	task, err := store.GetMostRecentTask(job, storeInstance.LastToken, storeInstance.APIToken)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		if agentMount != nil {
@@ -119,7 +115,7 @@ func RunBackup(job *store.Job, storeInstance *store.Store, token *store.Token) (
 			log.Printf("RunBackup (goroutine): error waiting for backup -> %v\n", err)
 		}
 
-		taskFound, err := store.GetTaskByUPID(task.UPID, storeInstance.LastToken)
+		taskFound, err := store.GetTaskByUPID(task.UPID, storeInstance.LastToken, storeInstance.APIToken)
 		if err != nil {
 			log.Printf("RunBackup (goroutine): unable to get task by UPID -> %v\n", err)
 			return

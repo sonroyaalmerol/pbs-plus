@@ -39,6 +39,7 @@ type Target struct {
 type Store struct {
 	Db        *sql.DB
 	LastToken *Token
+	APIToken  *APIToken
 }
 
 // Initialize initializes the database connection and returns a Store instance
@@ -121,7 +122,7 @@ func (store *Store) GetJob(id string) (*Job, error) {
 	}
 
 	if job.LastRunUpid != nil {
-		task, err := GetTaskByUPID(*job.LastRunUpid, store.LastToken)
+		task, err := GetTaskByUPID(*job.LastRunUpid, store.LastToken, store.APIToken)
 		if err != nil {
 			return nil, fmt.Errorf("GetJob: error getting task by UPID -> %w", err)
 		}
@@ -299,7 +300,7 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 		}
 
 		if job.LastRunUpid != nil {
-			task, err := GetTaskByUPID(*job.LastRunUpid, store.LastToken)
+			task, err := GetTaskByUPID(*job.LastRunUpid, store.LastToken, store.APIToken)
 			if err != nil {
 				return nil, fmt.Errorf("GetAllJobs: error getting task by UPID -> %w", err)
 			}

@@ -1,3 +1,5 @@
+//go:build linux
+
 package jobs
 
 import (
@@ -54,7 +56,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			return
 		}
 
-		task, err := backup.RunBackup(job, storeInstance, proxy.ExtractTokenFromRequest(r))
+		task, err := backup.RunBackup(job, storeInstance)
 		if err != nil {
 			controllers.WriteErrorResponse(w, err)
 			return

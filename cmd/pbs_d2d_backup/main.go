@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/robfig/cron"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/backend/backup"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/logger"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/proxy"
@@ -52,7 +51,7 @@ func main() {
 	}
 
 	if *jobRun != "" {
-		token, err := store.GetTokenFromFile()
+		token, err := store.GetAPITokenFromFile()
 		if err != nil {
 			if s != nil {
 				s.Err(err.Error())
@@ -61,12 +60,7 @@ func main() {
 			return
 		}
 
-		if storeInstance.LastToken == nil {
-			storeInstance.LastToken = token
-		} else {
-			log.Println("Login via browser first to capture the auth cookie.")
-			return
-		}
+		storeInstance.APIToken = token
 
 		jobTask, err := storeInstance.GetJob(*jobRun)
 		if err != nil {
@@ -82,7 +76,7 @@ func main() {
 			return
 		}
 
-		_, err = backup.RunBackup(jobTask, storeInstance, nil)
+		_, err = backup.RunBackup(jobTask, storeInstance)
 		if err != nil {
 			if s != nil {
 				s.Err(err.Error())
@@ -92,23 +86,6 @@ func main() {
 
 		return
 	}
-
-	c := cron.New()
-	c.AddFunc("*/5 * * * *", func() {
-		if storeInstance.LastToken == nil {
-			return
-		}
-
-		storeInstance.LastToken.Refresh()
-		err = storeInstance.LastToken.SaveToFile()
-		if err != nil {
-			if s != nil {
-				s.Err(err.Error())
-			}
-			log.Println(err)
-		}
-	})
-	c.Start()
 
 	mux.HandleFunc("/api2/json/d2d/backup", jobs.D2DJobHandler(storeInstance))
 	mux.HandleFunc("/api2/json/d2d/target", targets.D2DTargetHandler(storeInstance))

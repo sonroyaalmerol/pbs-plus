@@ -33,7 +33,7 @@ type Task struct {
 	ExitStatus string `json:"exitstatus"`
 }
 
-func GetMostRecentTask(job *Job, token *Token) (*Task, error) {
+func GetMostRecentTask(job *Job, token *Token, apiToken *APIToken) (*Task, error) {
 	tasksReq, err := http.NewRequest(
 		http.MethodGet,
 		fmt.Sprintf(
@@ -47,17 +47,21 @@ func GetMostRecentTask(job *Job, token *Token) (*Task, error) {
 		return nil, fmt.Errorf("GetMostRecentTask: error creating http request -> %w", err)
 	}
 
-	if token == nil {
+	if token == nil && apiToken == nil {
 		return nil, fmt.Errorf("GetMostRecentTask: token is required")
 	}
 
-	tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
+	if token != nil {
+		tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
 
-	tasksReq.AddCookie(&http.Cookie{
-		Name:  "PBSAuthCookie",
-		Value: token.Ticket,
-		Path:  "/",
-	})
+		tasksReq.AddCookie(&http.Cookie{
+			Name:  "PBSAuthCookie",
+			Value: token.Ticket,
+			Path:  "/",
+		})
+	} else if apiToken != nil {
+		tasksReq.Header.Set("Authorization", fmt.Sprintf("PBSAPIToken=%s:%s", apiToken.TokenId, apiToken.Value))
+	}
 
 	client := http.Client{
 		Timeout: time.Second * 10,
@@ -89,7 +93,7 @@ func GetMostRecentTask(job *Job, token *Token) (*Task, error) {
 	return &tasksStruct.Data[0], nil
 }
 
-func GetTaskByUPID(upid string, token *Token) (*Task, error) {
+func GetTaskByUPID(upid string, token *Token, apiToken *APIToken) (*Task, error) {
 	tasksReq, err := http.NewRequest(
 		http.MethodGet,
 		fmt.Sprintf(
@@ -103,17 +107,21 @@ func GetTaskByUPID(upid string, token *Token) (*Task, error) {
 		return nil, fmt.Errorf("GetTaskByUPID: error creating http request -> %w", err)
 	}
 
-	if token == nil {
+	if token == nil && apiToken == nil {
 		return nil, fmt.Errorf("GetTaskByUPID: token is required")
 	}
 
-	tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
+	if token != nil {
+		tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
 
-	tasksReq.AddCookie(&http.Cookie{
-		Name:  "PBSAuthCookie",
-		Value: token.Ticket,
-		Path:  "/",
-	})
+		tasksReq.AddCookie(&http.Cookie{
+			Name:  "PBSAuthCookie",
+			Value: token.Ticket,
+			Path:  "/",
+		})
+	} else if apiToken != nil {
+		tasksReq.Header.Set("Authorization", fmt.Sprintf("PBSAPIToken=%s:%s", apiToken.TokenId, apiToken.Value))
+	}
 
 	client := http.Client{
 		Timeout: time.Second * 10,
@@ -139,7 +147,7 @@ func GetTaskByUPID(upid string, token *Token) (*Task, error) {
 	}
 
 	if taskStruct.Data.Status == "stopped" {
-		endTime, err := GetTaskEndTime(&taskStruct.Data, token)
+		endTime, err := GetTaskEndTime(&taskStruct.Data, token, apiToken)
 		if err != nil {
 			return nil, fmt.Errorf("GetTaskByUPID: error getting task end time -> %w", err)
 		}
@@ -149,11 +157,11 @@ func GetTaskByUPID(upid string, token *Token) (*Task, error) {
 	return &taskStruct.Data, nil
 }
 
-func GetTaskEndTime(task *Task, token *Token) (int64, error) {
+func GetTaskEndTime(task *Task, token *Token, apiToken *APIToken) (int64, error) {
 	nextPage := true
 	var tasksStruct TasksResponse
 
-	if token == nil {
+	if token == nil && apiToken == nil {
 		return -1, fmt.Errorf("GetTaskEndTime: token is required")
 	}
 
@@ -174,13 +182,17 @@ func GetTaskEndTime(task *Task, token *Token) (int64, error) {
 			return -1, fmt.Errorf("GetTaskEndTime: error creating http request -> %w", err)
 		}
 
-		tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
+		if token != nil {
+			tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
 
-		tasksReq.AddCookie(&http.Cookie{
-			Name:  "PBSAuthCookie",
-			Value: token.Ticket,
-			Path:  "/",
-		})
+			tasksReq.AddCookie(&http.Cookie{
+				Name:  "PBSAuthCookie",
+				Value: token.Ticket,
+				Path:  "/",
+			})
+		} else if apiToken != nil {
+			tasksReq.Header.Set("Authorization", fmt.Sprintf("PBSAPIToken=%s:%s", apiToken.TokenId, apiToken.Value))
+		}
 
 		client := http.Client{
 			Timeout: time.Second * 10,

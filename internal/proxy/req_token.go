@@ -1,14 +1,25 @@
+//go:build linux
+
 package proxy
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 
+	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/logger"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/store"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/utils"
 )
 
 func ExtractTokenFromRequest(r *http.Request) *store.Token {
+	syslogger, err := logger.InitializeSyslogger()
+	if err != nil {
+		log.Println(err)
+	}
+
 	if r == nil {
 		return nil
 	}
@@ -17,14 +28,17 @@ func ExtractTokenFromRequest(r *http.Request) *store.Token {
 
 	pbsAuthCookie, err := r.Cookie("PBSAuthCookie")
 	if err != nil {
-		log.Println(err)
+		if syslogger != nil {
+			syslogger.Err(fmt.Errorf("ExtractTokenFromRequest: error retrieving cookie -> %w", err).Error())
+		}
 		return nil
 	}
 	decodedAuthCookie := strings.ReplaceAll(pbsAuthCookie.Value, "%3A", ":")
 	cookieSplit := strings.Split(decodedAuthCookie, ":")
 	if len(cookieSplit) < 5 {
-		log.Println("invalid cookie")
-		log.Println(decodedAuthCookie)
+		if syslogger != nil {
+			syslogger.Err(fmt.Sprintf("ExtractTokenFromRequest: error invalid cookie, less than 5 split"))
+		}
 
 		return nil
 	}
@@ -33,16 +47,24 @@ func ExtractTokenFromRequest(r *http.Request) *store.Token {
 	token.Ticket = decodedAuthCookie
 	token.Username = cookieSplit[1]
 
-	tokenForBackground := store.Token{
-		CSRFToken: token.CSRFToken,
-		Ticket:    token.Ticket,
-		Username:  token.Username,
-	}
+	if !utils.IsValid(filepath.Join(store.DbBasePath, "pbs-d2d-token.json")) {
+		apiToken, err := token.CreateAPIToken()
+		if err != nil {
+			errI := fmt.Errorf("ExtractTokenFromRequest: error creating API token -> %w", err)
+			if syslogger != nil {
+				syslogger.Err(errI.Error())
+			}
+			log.Println(errI)
+		}
 
-	tokenForBackground.Refresh()
-	err = tokenForBackground.SaveToFile()
-	if err != nil {
-		log.Println(err)
+		err = apiToken.SaveToFile()
+		if err != nil {
+			errI := fmt.Errorf("ExtractTokenFromRequest: error saving API token to file -> %w", err)
+			if syslogger != nil {
+				syslogger.Err(errI.Error())
+			}
+			log.Println(errI)
+		}
 	}
 
 	return &token
