@@ -36,6 +36,12 @@ type APITokenResponse struct {
 	Data APIToken `json:"data"`
 }
 
+type ACLRequest struct {
+	Path   string `json:"path"`
+	Role   string `json:"role"`
+	AuthId string `json:"auth-id"`
+}
+
 type APIToken struct {
 	TokenId string `json:"tokenid"`
 	Value   string `json:"value"`
@@ -112,6 +118,32 @@ func (token *Token) CreateAPIToken() (*APIToken, error) {
 	err = json.Unmarshal(tokensBody, &tokenStruct)
 	if err != nil {
 		return nil, fmt.Errorf("CreateAPIToken: error json unmarshal body -> %w", err)
+	}
+
+	aclBody, err := json.Marshal(&ACLRequest{
+		AuthId: tokenStruct.Data.TokenId,
+		Role:   "Admin",
+		Path:   "/",
+	})
+	aclReq, err := http.NewRequest(
+		http.MethodPut,
+		fmt.Sprintf(
+			"%s/api2/json/access/acl",
+			ProxyTargetURL,
+		),
+		bytes.NewBuffer(aclBody),
+	)
+	aclReq.AddCookie(&http.Cookie{
+		Path:  "/",
+		Name:  "PBSAuthCookie",
+		Value: authCookie,
+	})
+	aclReq.Header.Add("Csrfpreventiontoken", token.CSRFToken)
+	aclReq.Header.Add("Content-Type", "application/json")
+
+	_, err = client.Do(aclReq)
+	if err != nil {
+		return nil, fmt.Errorf("CreateAPIToken: error executing http request -> %w", err)
 	}
 
 	return &tokenStruct.Data, nil
