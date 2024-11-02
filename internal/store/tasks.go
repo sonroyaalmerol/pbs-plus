@@ -47,6 +47,10 @@ func GetMostRecentTask(job *Job, token *Token) (*Task, error) {
 		return nil, fmt.Errorf("GetMostRecentTask: error creating http request -> %w", err)
 	}
 
+	if token == nil {
+		return nil, fmt.Errorf("GetMostRecentTask: token is required")
+	}
+
 	tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
 
 	tasksReq.AddCookie(&http.Cookie{
@@ -100,7 +104,7 @@ func GetTaskByUPID(upid string, token *Token) (*Task, error) {
 	}
 
 	if token == nil {
-		return nil, fmt.Errorf("GetTaskByUPID: token is required -> %w", err)
+		return nil, fmt.Errorf("GetTaskByUPID: token is required")
 	}
 
 	tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
@@ -148,6 +152,10 @@ func GetTaskByUPID(upid string, token *Token) (*Task, error) {
 func GetTaskEndTime(task *Task, token *Token) (int64, error) {
 	nextPage := true
 	var tasksStruct TasksResponse
+
+	if token == nil {
+		return -1, fmt.Errorf("GetTaskEndTime: token is required")
+	}
 
 	page := 1
 	for nextPage {
