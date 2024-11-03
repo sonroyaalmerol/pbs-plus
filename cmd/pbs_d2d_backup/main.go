@@ -50,17 +50,20 @@ func main() {
 		log.Fatalf("Failed to create store tables: %v", err)
 	}
 
+	token, err := store.GetAPITokenFromFile()
+	if err != nil {
+		if s != nil {
+			s.Err(err.Error())
+		}
+		log.Println(err)
+	}
+
+	storeInstance.APIToken = token
+
 	if *jobRun != "" {
-		token, err := store.GetAPITokenFromFile()
-		if err != nil {
-			if s != nil {
-				s.Err(err.Error())
-			}
-			log.Println(err)
+		if storeInstance.APIToken == nil {
 			return
 		}
-
-		storeInstance.APIToken = token
 
 		jobTask, err := storeInstance.GetJob(*jobRun)
 		if err != nil {

@@ -18,6 +18,10 @@ import (
 )
 
 func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) {
+	if storeInstance.APIToken == nil {
+		return nil, fmt.Errorf("RunBackup: api token is required")
+	}
+
 	target, err := storeInstance.GetTarget(job.Target)
 	if err != nil {
 		return nil, fmt.Errorf("RunBackup -> %w", err)
@@ -43,15 +47,11 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 		srcPath = agentMount.Path
 	}
 
-	jobStore := job.Store
-
-	if storeInstance.APIToken != nil {
-		jobStore = fmt.Sprintf(
-			"%s@localhost:%s",
-			storeInstance.APIToken.TokenId,
-			job.Store,
-		)
-	}
+	jobStore := fmt.Sprintf(
+		"%s@localhost:%s",
+		storeInstance.APIToken.TokenId,
+		job.Store,
+	)
 
 	err = FixDatastore(job, storeInstance)
 	if err != nil {
@@ -73,9 +73,7 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 
 	cmd := exec.Command("/usr/bin/proxmox-backup-client", cmdArgs...)
 	cmd.Env = os.Environ()
-	if storeInstance.APIToken != nil {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_PASSWORD=%s", storeInstance.APIToken.Value))
-	}
+	cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_PASSWORD=%s", storeInstance.APIToken.Value))
 
 	pbsStatus, err := storeInstance.GetPBSStatus()
 	if err == nil {

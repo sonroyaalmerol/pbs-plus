@@ -59,6 +59,8 @@ func ExtractTokenFromRequest(r *http.Request, storeInstance *store.Store) *store
 			log.Println(errI)
 		}
 
+		storeInstance.APIToken = apiToken
+
 		err = apiToken.SaveToFile()
 		if err != nil {
 			errI := fmt.Errorf("ExtractTokenFromRequest: error saving API token to file -> %w", err)
