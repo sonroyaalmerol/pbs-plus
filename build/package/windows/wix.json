@@ -6,7 +6,7 @@
   "files": {
     "guid": "00a83f86-98b2-43f6-ba9a-b81b632c522f",
     "items": [
-      "pbs-d2d-backup.exe"
+      "pbs-d2d-agent.exe"
     ]
   },
   "env": {
@@ -31,7 +31,7 @@
   },
   "hooks": [
     {
-      "command": "sc.exe create PBSAgent binPath=\"[INSTALLDIR]pbs-d2d-backup.exe\" type=share start=auto DisplayName=\"PBS Agent\"",
+      "command": "sc.exe create PBSAgent binPath=\"[INSTALLDIR]pbs-d2d-agent.exe\" type=share start=auto DisplayName=\"PBS Agent\"",
       "when": "install"
     },
     {
