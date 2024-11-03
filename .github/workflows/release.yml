@@ -46,7 +46,7 @@ jobs:
         run: |
           # Use release_asset_dir output from the previous step
           mkdir -p build/debian/usr/bin
-          cp ${{ needs.release-linux-amd64.outputs.release_asset_dir }}/pbs-d2d-backup-${{ github.event.release.tag_name }}-linux-amd64 build/debian/usr/bin/pbs-d2d-backup
+          cp ${{ needs.release-linux-amd64.outputs.release_asset_dir }}/pbs-d2d-backup build/debian/usr/bin/pbs-d2d-backup
       - name: Set Version in control File
         run: |
           # Extract version from release tag
