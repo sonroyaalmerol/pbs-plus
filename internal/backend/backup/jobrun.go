@@ -46,7 +46,11 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 	jobStore := job.Store
 
 	if storeInstance.APIToken != nil {
-		jobStore = fmt.Sprintf("%s@localhost:%s", storeInstance.APIToken.TokenId, job.Store)
+		jobStore = fmt.Sprintf(
+			"%s@localhost:%s",
+			strings.Split(storeInstance.APIToken.TokenId, "!")[0],
+			job.Store,
+		)
 	}
 
 	cmdArgs := []string{
