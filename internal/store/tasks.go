@@ -74,6 +74,10 @@ func GetMostRecentTask(job *Job, token *Token, apiToken *APIToken) (*Task, error
 	if err != nil {
 		return nil, fmt.Errorf("GetMostRecentTask: error executing http request -> %w", err)
 	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, tasksResp.Body)
+		tasksResp.Body.Close()
+	}()
 
 	tasksBody, err := io.ReadAll(tasksResp.Body)
 	if err != nil {
@@ -134,6 +138,10 @@ func GetTaskByUPID(upid string, token *Token, apiToken *APIToken) (*Task, error)
 	if err != nil {
 		return nil, fmt.Errorf("GetTaskByUPID: error executing http request -> %w", err)
 	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, taskResp.Body)
+		taskResp.Body.Close()
+	}()
 
 	taskBody, err := io.ReadAll(taskResp.Body)
 	if err != nil {
@@ -205,6 +213,10 @@ func GetTaskEndTime(task *Task, token *Token, apiToken *APIToken) (int64, error)
 		if err != nil {
 			return -1, fmt.Errorf("GetTaskEndTime: error executing http request -> %w", err)
 		}
+		defer func() {
+			_, _ = io.Copy(io.Discard, tasksResp.Body)
+			tasksResp.Body.Close()
+		}()
 
 		tasksBody, err := io.ReadAll(tasksResp.Body)
 		if err != nil {

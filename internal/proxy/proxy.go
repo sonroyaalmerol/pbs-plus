@@ -37,6 +37,7 @@ func CreateProxy(target *url.URL, storeInstance *store.Store) *httputil.ReverseP
 			if err != nil {
 				return err
 			}
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 
 			modifiedContent := append(body, []byte("\n// Modified by proxy\n")...)

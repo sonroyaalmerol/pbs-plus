@@ -181,6 +181,11 @@ func getServerPublicKey(server string, publicKey string, basePath string) (*stri
 		return nil, fmt.Errorf("getServerPublicKey: error executing http request -> %w", err)
 	}
 
+	defer func() {
+		_, _ = io.Copy(io.Discard, newAgentResp.Body)
+		newAgentResp.Body.Close()
+	}()
+
 	newAgentBody, err := io.ReadAll(newAgentResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("getServerPublicKey: error getting body from response -> %w", err)

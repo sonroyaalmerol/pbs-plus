@@ -46,9 +46,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	systray.Run(onReady(*serverUrl), onExit)
-	defer systray.Quit()
-
 	// Reserve port 33450-33476
 	drives := utils.GetLocalDrives()
 	ctx := context.Background()
@@ -70,10 +67,13 @@ func main() {
 		}
 
 		wg.Add(1)
-		go sftp.Serve(ctx, &wg, sftpConfig.ServerConfig, "0.0.0.0", port, fmt.Sprintf("%s:\\", driveLetter))
+		go sftp.Serve(ctx, &wg, sftpConfig, "0.0.0.0", port, fmt.Sprintf("%s:\\", driveLetter))
 	}
 
 	defer snapshots.CloseAllSnapshots()
+
+	systray.Run(onReady(*serverUrl), onExit)
+	defer systray.Quit()
 
 	wg.Wait()
 }
