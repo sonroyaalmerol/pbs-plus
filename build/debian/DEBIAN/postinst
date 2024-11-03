@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+chmod +x /usr/bin/pbs-d2d-backup
+
 systemctl daemon-reload
 
 # Enable the service to start on boot

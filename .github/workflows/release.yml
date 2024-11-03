@@ -13,6 +13,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: wangyoucao577/go-release-action@v1
+      id: go_build
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         goos: linux
@@ -20,6 +21,28 @@ jobs:
         compress_assets: false
         executable_compression: upx 
         project_path: ./cmd/pbs_d2d_backup
+    - name: move binary to debian package
+      env:
+        BINARY_PATH: ${{steps.go_build.outputs.release_asset_dir}}
+      run: |
+        ls "$BINARY_PATH"
+        mv "$BINARY_PATH"/pbs-d2d-backup ./build/debian/usr/bin/pbs-d2d-backup
+    - uses: jiro4989/build-deb-action@v3
+      with:
+        package: ${{ github.event.repository.name }} 
+        package_root: build/debian
+        maintainer: Son Roy Almerol <github@snry.me> 
+        version: ${{ github.ref }} # refs/tags/v*.*.*
+        arch: 'amd64'
+        depends: 'proxmox-backup-client, rclone'
+        desc: 'A Proxmox Backup Server (PBS) proxy server that adds a "disk-to-disk" file backup functionality within PBS Web UI'
+        homepage: 'https://github.com/${{ github.repository }}'
+    - uses: actions/upload-artifact@v4
+      with:
+        name: artifact-deb
+        path: |
+          ./*.deb
+
 
   release-windows-amd64-agent:
     name: release agent windows/amd64
