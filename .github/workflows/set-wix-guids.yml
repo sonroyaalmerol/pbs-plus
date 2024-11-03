@@ -44,6 +44,7 @@ jobs:
       if: env.needs_guid == 'true'
       run: |
         choco install go-msi
+        refreshenv
         go-msi set-guid -p ./build/package/windows/wix.json
 
     - name: Commit and push changes
