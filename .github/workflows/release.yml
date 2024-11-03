@@ -21,11 +21,14 @@ jobs:
         compress_assets: false
         executable_compression: upx 
         project_path: ./cmd/pbs_d2d_backup
-    - name: move binary to debian package
+    - name: pre-packaging script
       env:
         BINARY_PATH: ${{steps.go_build.outputs.release_asset_dir}}
       run: |
         ls "$BINARY_PATH"
+        ls -al
+        chmod 755 ./build/debian/DEBIAN/postinst
+        mkdir -p ./build/debian/usr/bin
         mv "$BINARY_PATH"/pbs-d2d-backup ./build/debian/usr/bin/pbs-d2d-backup
     - uses: jiro4989/build-deb-action@v3
       with:
@@ -34,7 +37,7 @@ jobs:
         maintainer: Son Roy Almerol <github@snry.me> 
         version: ${{ github.ref }} # refs/tags/v*.*.*
         arch: 'amd64'
-        depends: 'proxmox-backup-client, rclone'
+        depends: 'proxmox-backup-client (>= 3.2.5), rclone'
         desc: 'A Proxmox Backup Server (PBS) proxy server that adds a "disk-to-disk" file backup functionality within PBS Web UI'
         homepage: 'https://github.com/${{ github.repository }}'
     - uses: actions/upload-artifact@v4
@@ -42,6 +45,13 @@ jobs:
         name: artifact-deb
         path: |
           ./*.deb
+    - name: Publish Release Assets
+      uses: softprops/action-gh-release@v1
+      with:
+        tag: ${{ github.event.release.tag_name }}
+        files: ./*.deb
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
   release-windows-amd64-agent:
@@ -58,42 +68,3 @@ jobs:
         executable_compression: upx 
         binary_name: pbs-d2d-agent
         project_path: ./cmd/pbs_windows_agent
-  
-  build-debian-package:
-    name: Build Debian Package
-    needs: release-linux-amd64
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Copy Binary to Debian Package Structure
-        run: |
-          # Use release_asset_dir output from the previous step
-          mkdir -p build/debian/usr/bin
-          cp ${{ needs.release-linux-amd64.outputs.release_asset_dir }}/pbs-d2d-backup build/debian/usr/bin/pbs-d2d-backup
-      - name: Set Version in control File
-        run: |
-          # Extract version from release tag
-          VERSION="${GITHUB_REF##*/}"
-          VERSION="${VERSION#v}"  # This removes the 'v' prefix
-          
-          # Replace placeholder with actual version in control file
-          sed -i "s/VERSION_PLACEHOLDER/$VERSION/" build/debian/DEBIAN/control
-      - name: Make postinst Script Executable
-        run: |
-          chmod 755 build/debian/DEBIAN/postinst
-      - name: Build and Package Debian .deb file
-        run: |
-          # Build the .deb package using the pre-defined directory structure
-          dpkg-deb --build build/debian build/pbs-d2d-backup-${{ github.event.release.tag_name }}-linux-amd64.deb
-      - name: Upload Debian Package
-        uses: actions/upload-artifact@v3
-        with:
-          name: pbs-d2d-backup
-          path: build/pbs-d2d-backup-${{ github.event.release.tag_name }}-linux-amd64.deb
-      - name: Publish Release Assets
-        uses: softprops/action-gh-release@v1
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          files: build/pbs-d2d-backup-${{ github.event.release.tag_name }}-linux-amd64.deb
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
