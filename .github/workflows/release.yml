@@ -20,6 +20,7 @@ jobs:
         compress_assets: false
         executable_compression: upx 
         project_path: ./cmd/pbs_d2d_backup
+
   release-windows-amd64-agent:
     name: release agent windows/amd64
     runs-on: ubuntu-latest
@@ -34,3 +35,42 @@ jobs:
         executable_compression: upx 
         binary_name: pbs-d2d-agent
         project_path: ./cmd/pbs_windows_agent
+  
+  build-debian-package:
+    name: Build Debian Package
+    needs: release-linux-amd64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy Binary to Debian Package Structure
+        run: |
+          # Use release_asset_dir output from the previous step
+          mkdir -p build/debian/usr/bin
+          cp ${{ needs.release-linux-amd64.outputs.release_asset_dir }}/pbs-d2d-backup-${{ github.event.release.tag_name }}-linux-amd64 build/debian/usr/bin/pbs-d2d-backup
+      - name: Set Version in control File
+        run: |
+          # Extract version from release tag
+          VERSION="${GITHUB_REF##*/}"
+          VERSION="${VERSION#v}"  # This removes the 'v' prefix
+          
+          # Replace placeholder with actual version in control file
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/" build/debian/DEBIAN/control
+      - name: Make postinst Script Executable
+        run: |
+          chmod 755 build/debian/DEBIAN/postinst
+      - name: Build and Package Debian .deb file
+        run: |
+          # Build the .deb package using the pre-defined directory structure
+          dpkg-deb --build build/debian build/pbs-d2d-backup-${{ github.event.release.tag_name }}-linux-amd64.deb
+      - name: Upload Debian Package
+        uses: actions/upload-artifact@v3
+        with:
+          name: pbs-d2d-backup
+          path: build/pbs-d2d-backup-${{ github.event.release.tag_name }}-linux-amd64.deb
+      - name: Publish Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag: ${{ github.event.release.tag_name }}
+          files: build/pbs-d2d-backup-${{ github.event.release.tag_name }}-linux-amd64.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

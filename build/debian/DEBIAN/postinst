@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+systemctl daemon-reload
+
+# Enable the service to start on boot
+systemctl enable pbs-d2d-backup.service
+
+# Start the service
+systemctl start pbs-d2d-backup.service
+
+exit 0

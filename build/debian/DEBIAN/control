@@ -1,0 +1,8 @@
+Package: pbs-d2d-backup
+Version: VERSION_PLACEHOLDER
+Section: admin 
+Priority: optional
+Architecture: amd64
+Maintainer: Son Roy Almerol <github@snry.me>
+Depends: proxmox-backup-client (>= 3.2.7), rclone
+Description: Proxmox D2D Backup Proxy
