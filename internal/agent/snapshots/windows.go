@@ -22,26 +22,6 @@ type WinVSSSnapshot struct {
 
 var CurrentSnapshots []*WinVSSSnapshot
 
-func symlinkSnapshot(symlinkPath string, id string, deviceObjectPath string) (string, error) {
-	snapshotSymLinkFolder := symlinkPath + "\\" + id + "\\"
-
-	snapshotSymLinkFolder = filepath.Clean(snapshotSymLinkFolder)
-	os.RemoveAll(snapshotSymLinkFolder)
-	if err := os.MkdirAll(snapshotSymLinkFolder, 0700); err != nil {
-		return "", fmt.Errorf("symlinkSnapshot: failed to create snapshot symlink folder for snapshot: %s -> %w", id, err)
-	}
-
-	os.Remove(snapshotSymLinkFolder)
-
-	fmt.Println("Symlink from: ", deviceObjectPath, " to: ", snapshotSymLinkFolder)
-
-	if err := os.Symlink(deviceObjectPath, snapshotSymLinkFolder); err != nil {
-		return "", fmt.Errorf("symlinkSnapshot: failed to create symlink from: %s to: %s -> %w", deviceObjectPath, snapshotSymLinkFolder, err)
-	}
-
-	return snapshotSymLinkFolder, nil
-}
-
 func getAppDataFolder() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
