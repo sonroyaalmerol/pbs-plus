@@ -17,11 +17,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Go environment
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'  # You may change this to the latest Go version if needed
-
     - name: Check for GUIDs in wix.json
       id: check_guid
       shell: pwsh
@@ -48,7 +43,7 @@ jobs:
     - name: Install go-msi and set GUIDs
       if: env.needs_guid == 'true'
       run: |
-        go install github.com/wix-go/go-msi/cmd/go-msi@latest
+        choco install go-msi
         go-msi set-guid -p ./build/package/windows/wix.json
 
     - name: Commit and push changes
