@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 
@@ -187,30 +188,27 @@ func onExit() {
 }
 
 func isAdmin() bool {
-	processHandle := windows.CurrentProcess()
-	var token windows.Token
-	err := windows.OpenProcessToken(processHandle, windows.TOKEN_QUERY, &token)
+	_, err := os.Open("\\\\.\\PHYSICALDRIVE0")
 	if err != nil {
 		return false
 	}
-	defer token.Close()
-	sid, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
-	if err != nil {
-		return false
-	}
-	isMember, err := token.IsMember(sid)
-	return err == nil && isMember
+	return true
 }
 
 func runAsAdmin() {
-	exe, err := os.Executable()
-	if err != nil {
-		showMessageBox("Error", fmt.Sprintf("Failed to get executable path: %s", err))
-		return
-	}
-	cmd := exec.Command("runas", "/user:Administrator", exe)
-	cmd.SysProcAttr = &windows.SysProcAttr{HideWindow: true}
-	err = cmd.Run()
+	verb := "runas"
+	exe, _ := os.Executable()
+	cwd, _ := os.Getwd()
+	args := strings.Join(os.Args[1:], " ")
+
+	verbPtr, _ := syscall.UTF16PtrFromString(verb)
+	exePtr, _ := syscall.UTF16PtrFromString(exe)
+	cwdPtr, _ := syscall.UTF16PtrFromString(cwd)
+	argPtr, _ := syscall.UTF16PtrFromString(args)
+
+	var showCmd int32 = 1 //SW_NORMAL
+
+	err := windows.ShellExecute(0, verbPtr, exePtr, argPtr, cwdPtr, showCmd)
 	if err != nil {
 		showMessageBox("Error", fmt.Sprintf("Failed to run as administrator: %s", err))
 	}
