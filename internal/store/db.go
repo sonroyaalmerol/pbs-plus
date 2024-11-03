@@ -142,7 +142,7 @@ func (store *Store) GetJob(id string) (*Job, error) {
 
 	nextSchedule, err := getNextSchedule(&job)
 	if err != nil {
-		return nil, fmt.Errorf("GetJob: error getting next schedule -> %w", err)
+		nextSchedule = nil
 	}
 
 	if nextSchedule != nil {
