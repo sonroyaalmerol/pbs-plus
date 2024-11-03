@@ -47,6 +47,8 @@ func ExtractTokenFromRequest(r *http.Request, storeInstance *store.Store) *store
 	token.Ticket = decodedAuthCookie
 	token.Username = cookieSplit[1]
 
+	storeInstance.LastToken = &token
+
 	if !utils.IsValid(filepath.Join(store.DbBasePath, "pbs-d2d-token.json")) {
 		apiToken, err := storeInstance.CreateAPIToken()
 		if err != nil {

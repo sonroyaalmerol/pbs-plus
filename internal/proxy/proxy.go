@@ -20,7 +20,7 @@ func CreateProxy(target *url.URL, storeInstance *store.Store) *httputil.ReverseP
 
 	proxy.Transport = store.BaseTransport
 	proxy.Director = func(req *http.Request) {
-		storeInstance.LastToken = ExtractTokenFromRequest(req, storeInstance)
+		ExtractTokenFromRequest(req, storeInstance)
 		originalDirector(req)
 	}
 

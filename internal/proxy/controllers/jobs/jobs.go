@@ -36,7 +36,7 @@ func D2DJobHandler(storeInstance *store.Store) func(http.ResponseWriter, *http.R
 			Digest: digest,
 		}
 
-		storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+		proxy.ExtractTokenFromRequest(r, storeInstance)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(toReturn)
@@ -64,7 +64,7 @@ func ExtJsJobRunHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 
 		w.Header().Set("Content-Type", "application/json")
 
-		storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+		proxy.ExtractTokenFromRequest(r, storeInstance)
 
 		response.Data = task.UPID
 		response.Status = http.StatusOK
@@ -104,7 +104,7 @@ func ExtJsJobHandler(storeInstance *store.Store) func(http.ResponseWriter, *http
 			return
 		}
 
-		storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+		proxy.ExtractTokenFromRequest(r, storeInstance)
 
 		response.Status = http.StatusOK
 		response.Success = true
@@ -178,7 +178,7 @@ func ExtJsJobSingleHandler(storeInstance *store.Store) func(http.ResponseWriter,
 				return
 			}
 
-			storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+			proxy.ExtractTokenFromRequest(r, storeInstance)
 
 			response.Status = http.StatusOK
 			response.Success = true
@@ -194,7 +194,7 @@ func ExtJsJobSingleHandler(storeInstance *store.Store) func(http.ResponseWriter,
 				return
 			}
 
-			storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+			proxy.ExtractTokenFromRequest(r, storeInstance)
 
 			response.Status = http.StatusOK
 			response.Success = true
@@ -211,7 +211,7 @@ func ExtJsJobSingleHandler(storeInstance *store.Store) func(http.ResponseWriter,
 				return
 			}
 
-			storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+			proxy.ExtractTokenFromRequest(r, storeInstance)
 
 			response.Status = http.StatusOK
 			response.Success = true

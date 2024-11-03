@@ -45,7 +45,7 @@ func D2DTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *htt
 				Digest: digest,
 			}
 
-			storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+			proxy.ExtractTokenFromRequest(r, storeInstance)
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(toReturn)
@@ -123,7 +123,7 @@ func ExtJsTargetHandler(storeInstance *store.Store) func(http.ResponseWriter, *h
 			return
 		}
 
-		storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+		proxy.ExtractTokenFromRequest(r, storeInstance)
 
 		response.Status = http.StatusOK
 		response.Success = true
@@ -182,7 +182,7 @@ func ExtJsTargetSingleHandler(storeInstance *store.Store) func(http.ResponseWrit
 				return
 			}
 
-			storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+			proxy.ExtractTokenFromRequest(r, storeInstance)
 
 			response.Status = http.StatusOK
 			response.Success = true
@@ -198,7 +198,7 @@ func ExtJsTargetSingleHandler(storeInstance *store.Store) func(http.ResponseWrit
 				return
 			}
 
-			storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+			proxy.ExtractTokenFromRequest(r, storeInstance)
 
 			response.Status = http.StatusOK
 			response.Success = true
@@ -215,7 +215,7 @@ func ExtJsTargetSingleHandler(storeInstance *store.Store) func(http.ResponseWrit
 				return
 			}
 
-			storeInstance.LastToken = proxy.ExtractTokenFromRequest(r, storeInstance)
+			proxy.ExtractTokenFromRequest(r, storeInstance)
 
 			response.Status = http.StatusOK
 			response.Success = true

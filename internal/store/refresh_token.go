@@ -45,6 +45,10 @@ type APIToken struct {
 }
 
 func (storeInstance *Store) CreateAPIToken() (*APIToken, error) {
+	if storeInstance.LastToken == nil {
+		return nil, fmt.Errorf("CreateAPIToken: token required")
+	}
+
 	_ = storeInstance.ProxmoxHTTPRequest(
 		http.MethodDelete,
 		fmt.Sprintf("/api2/json/access/users/%s/token/pbs-d2d-auth", storeInstance.LastToken.Username),
