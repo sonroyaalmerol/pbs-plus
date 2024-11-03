@@ -48,9 +48,14 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 	if storeInstance.APIToken != nil {
 		jobStore = fmt.Sprintf(
 			"%s@localhost:%s",
-			strings.Split(storeInstance.APIToken.TokenId, "!")[0],
+			storeInstance.APIToken.TokenId,
 			job.Store,
 		)
+	}
+
+	err = FixDatastore(job, storeInstance)
+	if err != nil {
+		return nil, fmt.Errorf("RunBackup: failed to fix datastore permissions -> %w", err)
 	}
 
 	cmdArgs := []string{
