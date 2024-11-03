@@ -20,6 +20,16 @@ func FixDatastore(job *store.Job, storeInstance *store.Store) error {
 		return fmt.Errorf("FixDatastore: token is required")
 	}
 
+	jobStore := job.Store
+
+	if storeInstance.APIToken != nil {
+		jobStore = fmt.Sprintf(
+			"%s@localhost:%s",
+			storeInstance.APIToken.TokenId,
+			job.Store,
+		)
+	}
+
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostnameFile, err := os.ReadFile("/etc/hostname")
@@ -42,7 +52,7 @@ func FixDatastore(job *store.Job, storeInstance *store.Store) error {
 		fmt.Sprintf("host/%s", hostname),
 		newOwner,
 		"--repository",
-		job.Store,
+		jobStore,
 	}
 
 	if job.Namespace != "" {
