@@ -40,11 +40,17 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 		srcPath = agentMount.Path
 	}
 
+	jobStore := job.Store
+
+	if storeInstance.APIToken != nil {
+		jobStore = fmt.Sprintf("%s@localhost:%s", storeInstance.APIToken.TokenId, job.Store)
+	}
+
 	cmdArgs := []string{
 		"backup",
 		fmt.Sprintf("%s.pxar:%s", strings.ReplaceAll(job.Target, " ", "-"), srcPath),
 		"--repository",
-		job.Store,
+		jobStore,
 		"--change-detection-mode=metadata",
 	}
 
@@ -55,6 +61,9 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 
 	cmd := exec.Command("/usr/bin/proxmox-backup-client", cmdArgs...)
 	cmd.Env = os.Environ()
+	if storeInstance.APIToken != nil {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_PASSWORD=%s", storeInstance.APIToken.Value))
+	}
 
 	logBuffer := bytes.Buffer{}
 	writer := io.MultiWriter(os.Stdout, &logBuffer)
