@@ -17,42 +17,19 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/getlantern/systray"
-	"github.com/kardianos/service"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/agent/sftp"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/agent/snapshots"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/utils"
 )
 
-//go:embed icon/logo.png
+//go:embed icon/logo.ico
 var icon []byte
-
-var logger service.Logger
-
-type AgentProgram struct {
-	Exec func()
-}
-
-func (p *AgentProgram) Start(s service.Service) error {
-	go p.Exec()
-	return nil
-}
-func (p *AgentProgram) Stop(s service.Service) error {
-	return nil
-}
-
-var svc service.Service
 
 func main() {
 	if !isAdmin() {
 		fmt.Println("This program needs to be run as administrator.")
 		runAsAdmin()
 		os.Exit(0)
-	}
-
-	svcConfig := &service.Config{
-		Name:        "PBSAgent",
-		DisplayName: "Proxmox Backup Agent",
-		Description: "Orchestrating backups with Proxmox Backup Server",
 	}
 
 	serverUrl, ok := os.LookupEnv("PBS_AGENT_SERVER")
@@ -70,66 +47,44 @@ func main() {
 		utils.SetEnvironment("PBS_AGENT_SERVER", serverUrl)
 	}
 
-	var err error
-	svc, err = service.New(
-		&AgentProgram{Exec: run(serverUrl)},
-		svcConfig,
-	)
+	_, err := url.ParseRequestURI(serverUrl)
 	if err != nil {
-		showMessageBox("Error", err.Error())
+		showMessageBox("Error", fmt.Sprintf("Invalid server URL: %s", err))
 		os.Exit(1)
 	}
 
-	logger, err = svc.Logger(nil)
-	if err != nil {
-		showMessageBox("Error", err.Error())
-		os.Exit(1)
-	}
+	// Reserve port 33450-33476
+	drives := utils.GetLocalDrives()
+	ctx := context.Background()
 
-	svc.Run()
-}
+	var wg sync.WaitGroup
+	for _, driveLetter := range drives {
+		rune := []rune(driveLetter)[0]
 
-func run(serverUrl string) func() {
-	return func() {
-		_, err := url.ParseRequestURI(serverUrl)
+		sftpConfig, _ := sftp.InitializeSFTPConfig(serverUrl, driveLetter)
+
+		err = sftpConfig.PopulateKeys()
 		if err != nil {
-			showMessageBox("Error", fmt.Sprintf("Invalid server URL: %s", err))
+			showMessageBox("Error", fmt.Sprintf("Unable to populate SFTP keys: %s", err))
 			os.Exit(1)
 		}
 
-		// Reserve port 33450-33476
-		drives := utils.GetLocalDrives()
-		ctx := context.Background()
-
-		var wg sync.WaitGroup
-		for _, driveLetter := range drives {
-			rune := []rune(driveLetter)[0]
-
-			sftpConfig, _ := sftp.InitializeSFTPConfig(serverUrl, driveLetter)
-
-			err = sftpConfig.PopulateKeys()
-			if err != nil {
-				showMessageBox("Error", fmt.Sprintf("Unable to populate SFTP keys: %s", err))
-				os.Exit(1)
-			}
-
-			port, err := utils.DriveLetterPort(rune)
-			if err != nil {
-				showMessageBox("Error", fmt.Sprintf("Unable to map letter to port: %s", err))
-				os.Exit(1)
-			}
-
-			wg.Add(1)
-			go sftp.Serve(ctx, &wg, sftpConfig, "0.0.0.0", port, fmt.Sprintf("%s:\\", driveLetter))
+		port, err := utils.DriveLetterPort(rune)
+		if err != nil {
+			showMessageBox("Error", fmt.Sprintf("Unable to map letter to port: %s", err))
+			os.Exit(1)
 		}
 
-		defer snapshots.CloseAllSnapshots()
-
-		systray.Run(onReady(serverUrl), onExit)
-		defer systray.Quit()
-
-		wg.Wait()
+		wg.Add(1)
+		go sftp.Serve(ctx, &wg, sftpConfig, "0.0.0.0", port, fmt.Sprintf("%s:\\", driveLetter))
 	}
+
+	defer snapshots.CloseAllSnapshots()
+
+	systray.Run(onReady(serverUrl), onExit)
+	defer systray.Quit()
+
+	wg.Wait()
 }
 
 func showMessageBox(title, message string) {
@@ -168,19 +123,10 @@ func onReady(serverUrl string) func() {
 
 		serverIP := systray.AddMenuItem(fmt.Sprintf("Server: %s", url), "Proxmox Backup Server address")
 		serverIP.Disable()
-
-		mQuit := systray.AddMenuItem("Quit", "Quit service")
-
-		go func() {
-			<-mQuit.ClickedCh
-			systray.Quit()
-		}()
 	}
 }
 
 func onExit() {
-	snapshots.CloseAllSnapshots()
-	_ = svc.Stop()
 }
 
 func isAdmin() bool {
