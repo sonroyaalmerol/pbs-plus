@@ -44,10 +44,8 @@ jobs:
       if: env.needs_guid == 'true'
       run: |
         choco install go-msi
-
-    - name: Set GUIDs
-      if: env.needs_guid == 'true'
-      run: |
+        Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
+        refreshenv
         go-msi set-guid -p ./build/package/windows/wix.json
 
     - name: Commit and push changes
