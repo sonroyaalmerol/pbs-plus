@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,7 +18,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func Serve(ctx context.Context, wg *sync.WaitGroup, sshConfig *ssh.ServerConfig, address, port string, baseDir string) {
+func Serve(ctx context.Context, wg *sync.WaitGroup, sftpConfig *SFTPConfig, address, port string, baseDir string) {
 	defer wg.Done()
 	listenAt := fmt.Sprintf("%s:%s", address, port)
 	listener, err := net.Listen("tcp", listenAt)
@@ -39,20 +41,31 @@ func Serve(ctx context.Context, wg *sync.WaitGroup, sshConfig *ssh.ServerConfig,
 				continue
 			}
 
-			go handleConnection(conn, sshConfig, baseDir)
+			go handleConnection(conn, sftpConfig, baseDir)
 		}
 	}
 }
 
-func handleConnection(conn net.Conn, sshConfig *ssh.ServerConfig, baseDir string) {
+func handleConnection(conn net.Conn, sftpConfig *SFTPConfig, baseDir string) {
 	defer conn.Close()
 
-	sconn, chans, reqs, err := ssh.NewServerConn(conn, sshConfig)
+	server, err := url.Parse(sftpConfig.Server)
 	if err != nil {
-		log.Printf("failed to perform SSH handshake: %v", err)
-		log.Println(sshConfig)
+		log.Printf("failed to parse server IP: %v", err)
 		return
 	}
+
+	if strings.Contains(conn.RemoteAddr().String(), server.Hostname()) {
+		log.Printf("WARNING: an unregistered client has attempted to connect: %s", conn.RemoteAddr().String())
+		return
+	}
+
+	sconn, chans, reqs, err := ssh.NewServerConn(conn, sftpConfig.ServerConfig)
+	if err != nil {
+		log.Printf("failed to perform SSH handshake: %v", err)
+		return
+	}
+
 	defer sconn.Close()
 
 	go ssh.DiscardRequests(reqs)
