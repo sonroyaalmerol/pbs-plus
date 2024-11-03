@@ -10,18 +10,18 @@ import (
 )
 
 type PBSStatus struct {
-	BootInfo      map[string]string `json:"boot-info"`
-	CPU           float64           `json:"cpu"`
-	CPUInfo       map[string]string `json:"cpuinfo"`
-	CurrentKernel map[string]string `json:"current-kernel"`
-	Info          map[string]string `json:"info"`
-	KVersion      string            `json:"kversion"`
-	LoadAvg       []float32         `json:"loadavg"`
-	Memory        map[string]int64  `json:"memory"`
-	Root          map[string]int64  `json:"root"`
-	Swap          map[string]int64  `json:"swap"`
-	Uptime        int64             `json:"uptime"`
-	Wait          float32           `json:"wait"`
+	BootInfo      map[string]interface{} `json:"boot-info"`
+	CPU           float64                `json:"cpu"`
+	CPUInfo       map[string]interface{} `json:"cpuinfo"`
+	CurrentKernel map[string]interface{} `json:"current-kernel"`
+	Info          map[string]string      `json:"info"`
+	KVersion      string                 `json:"kversion"`
+	LoadAvg       []float32              `json:"loadavg"`
+	Memory        map[string]int64       `json:"memory"`
+	Root          map[string]int64       `json:"root"`
+	Swap          map[string]int64       `json:"swap"`
+	Uptime        int64                  `json:"uptime"`
+	Wait          float32                `json:"wait"`
 }
 
 type PBSStatusResponse struct {
