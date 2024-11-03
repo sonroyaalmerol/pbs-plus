@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/store"
 )
@@ -15,8 +16,8 @@ func FixDatastore(job *store.Job, storeInstance *store.Store) error {
 		return fmt.Errorf("FixDatastore: store is required")
 	}
 
-	if storeInstance.APIToken == nil {
-		return fmt.Errorf("FixDatastore: api token is required")
+	if storeInstance.APIToken == nil && storeInstance.LastToken == nil {
+		return fmt.Errorf("FixDatastore: token is required")
 	}
 
 	hostname, err := os.Hostname()
@@ -24,10 +25,25 @@ func FixDatastore(job *store.Job, storeInstance *store.Store) error {
 		hostname = "localhost"
 	}
 
+	newOwner := ""
+	if storeInstance.APIToken != nil {
+		newOwner = storeInstance.APIToken.TokenId
+	} else {
+		authCookie := storeInstance.LastToken.Ticket
+		decodedAuthCookie := strings.ReplaceAll(authCookie, "%3A", ":")
+
+		authCookieParts := strings.Split(decodedAuthCookie, ":")
+		if len(authCookieParts) < 5 {
+			return fmt.Errorf("FixDatastore: invalid cookie %s", authCookie)
+		}
+
+		newOwner = authCookieParts[1]
+	}
+
 	cmdArgs := []string{
 		"change-owner",
 		fmt.Sprintf("host/%s", hostname),
-		storeInstance.APIToken.TokenId,
+		newOwner,
 		"--repository",
 		job.Store,
 	}
