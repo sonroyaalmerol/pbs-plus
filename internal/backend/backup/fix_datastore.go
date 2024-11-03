@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/store"
 )
@@ -21,7 +22,12 @@ func FixDatastore(job *store.Job, storeInstance *store.Store) error {
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		hostname = "localhost"
+		hostnameFile, err := os.ReadFile("/etc/hostname")
+		if err != nil {
+			hostname = "localhost"
+		}
+
+		hostname = strings.TrimSpace(string(hostnameFile))
 	}
 
 	newOwner := ""
@@ -64,7 +70,7 @@ func FixDatastore(job *store.Job, storeInstance *store.Store) error {
 
 	err = cmd.Run()
 	if err != nil {
-		return fmt.Errorf("FixDatastore: proxmox-backup-client change-owner error -> %w", err)
+		return fmt.Errorf("FixDatastore: proxmox-backup-client change-owner error (%s) -> %w", cmd.String(), err)
 	}
 	return nil
 }

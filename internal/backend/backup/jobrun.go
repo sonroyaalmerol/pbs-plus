@@ -95,7 +95,7 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 		if agentMount != nil {
 			agentMount.Unmount()
 		}
-		return nil, fmt.Errorf("RunBackup: proxmox-backup-client start error -> %w", err)
+		return nil, fmt.Errorf("RunBackup: proxmox-backup-client start error (%s) -> %w", cmd.String(), err)
 	}
 
 	for {
