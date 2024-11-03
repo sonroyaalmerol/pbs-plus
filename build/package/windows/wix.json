@@ -2,16 +2,15 @@
   "product": "pbs-d2d-backup",
   "company": "snry",
   "license": "LICENSE",
-  "upgrade-code": "",
+  "upgrade-code": "784ea465-1680-4997-9f00-ee8d228ab646",
   "files": {
-    "guid": "",
+    "guid": "00a83f86-98b2-43f6-ba9a-b81b632c522f",
     "items": [
       "pbs-d2d-backup.exe"
     ]
   },
-  "directories": [],
   "env": {
-    "guid": "",
+    "guid": "67b2be3d-8b6a-4bbc-a973-6a2876b03c2e",
     "vars": [
       {
         "name": "PATH",
@@ -23,15 +22,25 @@
       }
     ]
   },
-  "hooks": [
-    {"when": "install", "command": "sc.exe create PBSAgent binPath=\"[INSTALLDIR]pbs-d2d-backup.exe\" type=share start=auto DisplayName=\"PBS Agent\""},
-    {"when": "install", "command": "sc.exe start PBSAgent"},
-    {"when": "uninstall", "command": "sc.exe delete PBSAgent"}
-  ],
+  "shortcuts": {},
   "choco": {
     "description": "Orchestrating backups with Proxmox Backup Server",
     "project-url": "https://github.com/sonroyaalmerol/pbs-d2d-backup",
     "tags": "backup agent",
     "license-url": "https://github.com/sonroyaalmerol/pbs-d2d-backup/LICENSE"
-  }
+  },
+  "hooks": [
+    {
+      "command": "sc.exe create PBSAgent binPath=\"[INSTALLDIR]pbs-d2d-backup.exe\" type=share start=auto DisplayName=\"PBS Agent\"",
+      "when": "install"
+    },
+    {
+      "command": "sc.exe start PBSAgent",
+      "when": "install"
+    },
+    {
+      "command": "sc.exe delete PBSAgent",
+      "when": "uninstall"
+    }
+  ]
 }
