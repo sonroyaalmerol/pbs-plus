@@ -42,6 +42,12 @@ func (p *AgentProgram) Stop(s service.Service) error {
 var svc service.Service
 
 func main() {
+	if !isAdmin() {
+		fmt.Println("This program needs to be run as administrator.")
+		runAsAdmin()
+		os.Exit(0)
+	}
+
 	svcConfig := &service.Config{
 		Name:        "PBSAgent",
 		DisplayName: "Proxmox Backup Agent",
@@ -138,10 +144,9 @@ func showMessageBox(title, message string) {
 
 func promptInput(title, prompt string) string {
 	cmd := exec.Command("powershell", "-Command", fmt.Sprintf(`
-        $wshell = New-Object -ComObject WScript.Shell; 
-        $wshell.Popup("%s",0,"%s",1+64);
-        $input = $wshell.Popup("%s",0,"%s",1+64);
-        $input`, prompt, title, prompt, title))
+		[void][Reflection.Assembly]::LoadWithPartialName('Microsoft.VisualBasic');
+		$input = [Microsoft.VisualBasic.Interaction]::InputBox('%s', '%s');
+    $input`, prompt, title))
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -179,4 +184,34 @@ func onReady(serverUrl string) func() {
 func onExit() {
 	snapshots.CloseAllSnapshots()
 	_ = svc.Stop()
+}
+
+func isAdmin() bool {
+	processHandle := windows.CurrentProcess()
+	var token windows.Token
+	err := windows.OpenProcessToken(processHandle, windows.TOKEN_QUERY, &token)
+	if err != nil {
+		return false
+	}
+	defer token.Close()
+	sid, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		return false
+	}
+	isMember, err := token.IsMember(sid)
+	return err == nil && isMember
+}
+
+func runAsAdmin() {
+	exe, err := os.Executable()
+	if err != nil {
+		showMessageBox("Error", fmt.Sprintf("Failed to get executable path: %s", err))
+		return
+	}
+	cmd := exec.Command("runas", "/user:Administrator", exe)
+	cmd.SysProcAttr = &windows.SysProcAttr{HideWindow: true}
+	err = cmd.Run()
+	if err != nil {
+		showMessageBox("Error", fmt.Sprintf("Failed to run as administrator: %s", err))
+	}
 }
