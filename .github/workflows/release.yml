@@ -24,20 +24,15 @@ jobs:
     - name: pre-packaging script
       env:
         BINARY_PATH: ${{steps.go_build.outputs.release_asset_dir}}
-      run: |
-        ls "$BINARY_PATH"
-        ls -al
-        chmod 755 ./build/debian/DEBIAN/postinst
-        mkdir -p ./build/debian/usr/bin
-        mv "$BINARY_PATH"/pbs-d2d-backup ./build/debian/usr/bin/pbs-d2d-backup
+      run: ./build/package/pre-packaging.sh 
     - uses: jiro4989/build-deb-action@v3
       with:
         package: ${{ github.event.repository.name }} 
-        package_root: build/debian
+        package_root: build/package/debian
         maintainer: Son Roy Almerol <github@snry.me> 
         version: ${{ github.ref }} # refs/tags/v*.*.*
         arch: 'amd64'
-        depends: 'proxmox-backup-client (>= 3.2.5), rclone'
+        depends: 'proxmox-backup (>= 3.2), proxmox-backup-client (>= 3.2.5), rclone'
         desc: 'A Proxmox Backup Server (PBS) proxy server that adds a "disk-to-disk" file backup functionality within PBS Web UI'
         homepage: 'https://github.com/${{ github.repository }}'
     - uses: actions/upload-artifact@v4
