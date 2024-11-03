@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/store"
 )
@@ -29,15 +28,7 @@ func FixDatastore(job *store.Job, storeInstance *store.Store) error {
 	if storeInstance.APIToken != nil {
 		newOwner = storeInstance.APIToken.TokenId
 	} else {
-		authCookie := storeInstance.LastToken.Ticket
-		decodedAuthCookie := strings.ReplaceAll(authCookie, "%3A", ":")
-
-		authCookieParts := strings.Split(decodedAuthCookie, ":")
-		if len(authCookieParts) < 5 {
-			return fmt.Errorf("FixDatastore: invalid cookie %s", authCookie)
-		}
-
-		newOwner = authCookieParts[1]
+		newOwner = storeInstance.LastToken.Username
 	}
 
 	cmdArgs := []string{
@@ -55,7 +46,11 @@ func FixDatastore(job *store.Job, storeInstance *store.Store) error {
 
 	cmd := exec.Command("/usr/bin/proxmox-backup-client", cmdArgs...)
 	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_PASSWORD=%s", storeInstance.APIToken.Value))
+	if storeInstance.APIToken != nil {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_PASSWORD=%s", storeInstance.APIToken.Value))
+	} else {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_PASSWORD=%s", storeInstance.LastToken.Ticket))
+	}
 
 	pbsStatus, err := store.GetPBSStatus(storeInstance.LastToken, storeInstance.APIToken)
 	if err == nil {
