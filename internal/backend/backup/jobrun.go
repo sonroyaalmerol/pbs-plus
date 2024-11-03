@@ -68,6 +68,13 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 		cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_PASSWORD=%s", storeInstance.APIToken.Value))
 	}
 
+	pbsStatus, err := store.GetPBSStatus(storeInstance.LastToken, storeInstance.APIToken)
+	if err == nil {
+		if fingerprint, ok := pbsStatus.Info["fingerprint"]; ok {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_FINGERPRINT=%s", fingerprint))
+		}
+	}
+
 	logBuffer := bytes.Buffer{}
 	writer := io.MultiWriter(os.Stdout, &logBuffer)
 
