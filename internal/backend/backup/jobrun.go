@@ -1,3 +1,5 @@
+//go:build linux
+
 package backup
 
 import (
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/backend/mount"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/logger"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/store"
 )
 
@@ -116,17 +119,27 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 	}
 
 	go func() {
+		syslogger, _ := logger.InitializeSyslogger()
+
 		if agentMount != nil {
 			defer agentMount.Unmount()
 		}
 		err = cmd.Wait()
 		if err != nil {
-			log.Printf("RunBackup (goroutine): error waiting for backup -> %v\n", err)
+			errI := fmt.Sprintf("RunBackup (goroutine): error waiting for backup -> %v", err)
+			log.Println(errI)
+			if syslogger != nil {
+				syslogger.Err(errI)
+			}
 		}
 
 		taskFound, err := store.GetTaskByUPID(task.UPID, storeInstance.LastToken, storeInstance.APIToken)
 		if err != nil {
-			log.Printf("RunBackup (goroutine): unable to get task by UPID -> %v\n", err)
+			errI := fmt.Sprintf("RunBackup (goroutine): unable to get task by UPID -> %v", err)
+			log.Println(errI)
+			if syslogger != nil {
+				syslogger.Err(errI)
+			}
 			return
 		}
 
@@ -135,7 +148,11 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 
 		err = storeInstance.UpdateJob(*job)
 		if err != nil {
-			log.Printf("RunBackup (goroutine): unable to update job -> %v\n", err)
+			errI := fmt.Sprintf("RunBackup (goroutine): unable to update job -> %v", err)
+			log.Println(errI)
+			if syslogger != nil {
+				syslogger.Err(errI)
+			}
 			return
 		}
 	}()
