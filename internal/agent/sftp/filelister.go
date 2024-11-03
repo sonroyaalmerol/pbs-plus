@@ -100,11 +100,14 @@ func skipFile(path string, fileInfo os.FileInfo, isRoot bool) bool {
 	}
 
 	if !fileInfo.IsDir() {
-		if _, err := os.Open(path); err != nil {
+		f, err := os.Open(path)
+		if err != nil {
 			if pe, ok := err.(*os.PathError); ok && pe.Err == syscall.ERROR_ACCESS_DENIED {
 				return true
 			}
 		}
+		f.Close()
 	}
+
 	return false
 }
