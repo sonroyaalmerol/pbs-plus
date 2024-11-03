@@ -78,15 +78,14 @@ jobs:
       with:
         name: windows-binary
         path: $GITHUB_WORKSPACE/build/package/windows/
-    - uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'  # You may change this to the latest Go version if needed
     - env:
         MSI_NAME: "${{ github.event.repository.name }}-${{ github.event.release.tag_name }}-windows.msi"
         VERSION: ${{ github.event.release.tag_name[1:] }}
       shell: pwsh
       run: |
-        go install github.com/wix-go/go-msi/cmd/go-msi@latest
+        choco install go-msi
+        Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
+        refreshenv
         cd ./build/package/windows 
         go-msi make --msi "$MSI_NAME" --version "$VERSION"
     - name: Publish Release Assets
