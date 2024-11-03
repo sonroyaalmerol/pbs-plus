@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,9 +38,10 @@ type Target struct {
 
 // Store holds the database instance
 type Store struct {
-	Db        *sql.DB
-	LastToken *Token
-	APIToken  *APIToken
+	Db         *sql.DB
+	LastToken  *Token
+	APIToken   *APIToken
+	HTTPClient *http.Client
 }
 
 // Initialize initializes the database connection and returns a Store instance
@@ -122,7 +124,7 @@ func (store *Store) GetJob(id string) (*Job, error) {
 	}
 
 	if job.LastRunUpid != nil {
-		task, err := GetTaskByUPID(*job.LastRunUpid, store.LastToken, store.APIToken)
+		task, err := store.GetTaskByUPID(*job.LastRunUpid)
 		if err != nil {
 			return nil, fmt.Errorf("GetJob: error getting task by UPID -> %w", err)
 		}
@@ -300,7 +302,7 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 		}
 
 		if job.LastRunUpid != nil {
-			task, err := GetTaskByUPID(*job.LastRunUpid, store.LastToken, store.APIToken)
+			task, err := store.GetTaskByUPID(*job.LastRunUpid)
 			if err != nil {
 				return nil, fmt.Errorf("GetAllJobs: error getting task by UPID -> %w", err)
 			}

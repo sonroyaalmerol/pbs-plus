@@ -5,7 +5,6 @@ package proxy
 import (
 	"bytes"
 	"compress/flate"
-	"crypto/tls"
 	"io"
 	"net/http"
 	"net/http/httputil"
@@ -19,12 +18,9 @@ func CreateProxy(target *url.URL, storeInstance *store.Store) *httputil.ReverseP
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	originalDirector := proxy.Director
 
-	proxy.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-
+	proxy.Transport = store.BaseTransport
 	proxy.Director = func(req *http.Request) {
-		storeInstance.LastToken = ExtractTokenFromRequest(req)
+		storeInstance.LastToken = ExtractTokenFromRequest(req, storeInstance)
 		originalDirector(req)
 	}
 

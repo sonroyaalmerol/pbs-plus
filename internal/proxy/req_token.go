@@ -14,7 +14,7 @@ import (
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/utils"
 )
 
-func ExtractTokenFromRequest(r *http.Request) *store.Token {
+func ExtractTokenFromRequest(r *http.Request, storeInstance *store.Store) *store.Token {
 	syslogger, err := logger.InitializeSyslogger()
 	if err != nil {
 		log.Println(err)
@@ -48,7 +48,7 @@ func ExtractTokenFromRequest(r *http.Request) *store.Token {
 	token.Username = cookieSplit[1]
 
 	if !utils.IsValid(filepath.Join(store.DbBasePath, "pbs-d2d-token.json")) {
-		apiToken, err := token.CreateAPIToken()
+		apiToken, err := storeInstance.CreateAPIToken()
 		if err != nil {
 			errI := fmt.Errorf("ExtractTokenFromRequest: error creating API token -> %w", err)
 			if syslogger != nil {

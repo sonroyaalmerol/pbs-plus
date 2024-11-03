@@ -68,7 +68,7 @@ func FixDatastore(job *store.Job, storeInstance *store.Store) error {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_PASSWORD=%s", storeInstance.LastToken.Ticket))
 	}
 
-	pbsStatus, err := store.GetPBSStatus(storeInstance.LastToken, storeInstance.APIToken)
+	pbsStatus, err := storeInstance.GetPBSStatus()
 	if err == nil {
 		if fingerprint, ok := pbsStatus.Info["fingerprint"]; ok {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_FINGERPRINT=%s", fingerprint))

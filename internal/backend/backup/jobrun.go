@@ -77,7 +77,7 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 		cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_PASSWORD=%s", storeInstance.APIToken.Value))
 	}
 
-	pbsStatus, err := store.GetPBSStatus(storeInstance.LastToken, storeInstance.APIToken)
+	pbsStatus, err := storeInstance.GetPBSStatus()
 	if err == nil {
 		if fingerprint, ok := pbsStatus.Info["fingerprint"]; ok {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("PBS_FINGERPRINT=%s", fingerprint))
@@ -111,7 +111,7 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 		time.Sleep(time.Millisecond * 100)
 	}
 
-	task, err := store.GetMostRecentTask(job, storeInstance.LastToken, storeInstance.APIToken)
+	task, err := storeInstance.GetMostRecentTask(job)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		if agentMount != nil {
@@ -149,7 +149,7 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 			}
 		}
 
-		taskFound, err := store.GetTaskByUPID(task.UPID, storeInstance.LastToken, storeInstance.APIToken)
+		taskFound, err := storeInstance.GetTaskByUPID(task.UPID)
 		if err != nil {
 			errI := fmt.Sprintf("RunBackup (goroutine): unable to get task by UPID -> %v", err)
 			log.Println(errI)

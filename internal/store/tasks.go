@@ -1,12 +1,8 @@
 package store
 
 import (
-	"crypto/tls"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"time"
 )
 
 type TasksResponse struct {
@@ -33,208 +29,77 @@ type Task struct {
 	ExitStatus string `json:"exitstatus"`
 }
 
-func GetMostRecentTask(job *Job, token *Token, apiToken *APIToken) (*Task, error) {
-	tasksReq, err := http.NewRequest(
+func (storeInstance *Store) GetMostRecentTask(job *Job) (*Task, error) {
+	var resp TasksResponse
+	err := storeInstance.ProxmoxHTTPRequest(
 		http.MethodGet,
-		fmt.Sprintf(
-			"%s/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&limit=1",
-			ProxyTargetURL,
-			job.Store,
-		),
+		fmt.Sprintf("/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&limit=1", job.Store),
 		nil,
+		&resp,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("GetMostRecentTask: error creating http request -> %w", err)
 	}
 
-	if token == nil && apiToken == nil {
-		return nil, fmt.Errorf("GetMostRecentTask: token is required")
-	}
-
-	if token != nil {
-		tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
-
-		tasksReq.AddCookie(&http.Cookie{
-			Name:  "PBSAuthCookie",
-			Value: token.Ticket,
-			Path:  "/",
-		})
-	} else if apiToken != nil {
-		tasksReq.Header.Set("Authorization", fmt.Sprintf("PBSAPIToken=%s:%s", apiToken.TokenId, apiToken.Value))
-	}
-
-	client := http.Client{
-		Timeout: time.Second * 10,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	tasksResp, err := client.Do(tasksReq)
-	if err != nil {
-		return nil, fmt.Errorf("GetMostRecentTask: error executing http request -> %w", err)
-	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, tasksResp.Body)
-		tasksResp.Body.Close()
-	}()
-
-	tasksBody, err := io.ReadAll(tasksResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("GetMostRecentTask: error getting body content -> %w", err)
-	}
-
-	var tasksStruct TasksResponse
-	err = json.Unmarshal(tasksBody, &tasksStruct)
-	if err != nil {
-		return nil, fmt.Errorf("GetMostRecentTask: error json unmarshal body content -> %w", err)
-	}
-
-	if len(tasksStruct.Data) == 0 {
+	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("GetMostRecentTask: error getting tasks: not found")
 	}
 
-	return &tasksStruct.Data[0], nil
+	return &resp.Data[0], nil
 }
 
-func GetTaskByUPID(upid string, token *Token, apiToken *APIToken) (*Task, error) {
-	tasksReq, err := http.NewRequest(
+func (storeInstance *Store) GetTaskByUPID(upid string) (*Task, error) {
+	var resp TaskResponse
+	err := storeInstance.ProxmoxHTTPRequest(
 		http.MethodGet,
-		fmt.Sprintf(
-			"%s/api2/json/nodes/localhost/tasks/%s/status",
-			ProxyTargetURL,
-			upid,
-		),
+		fmt.Sprintf("/api2/json/nodes/localhost/tasks/%s/status", upid),
 		nil,
+		&resp,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("GetTaskByUPID: error creating http request -> %w", err)
 	}
 
-	if token == nil && apiToken == nil {
-		return nil, fmt.Errorf("GetTaskByUPID: token is required")
-	}
-
-	if token != nil {
-		tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
-
-		tasksReq.AddCookie(&http.Cookie{
-			Name:  "PBSAuthCookie",
-			Value: token.Ticket,
-			Path:  "/",
-		})
-	} else if apiToken != nil {
-		tasksReq.Header.Set("Authorization", fmt.Sprintf("PBSAPIToken=%s:%s", apiToken.TokenId, apiToken.Value))
-	}
-
-	client := http.Client{
-		Timeout: time.Second * 10,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
-
-	taskResp, err := client.Do(tasksReq)
-	if err != nil {
-		return nil, fmt.Errorf("GetTaskByUPID: error executing http request -> %w", err)
-	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, taskResp.Body)
-		taskResp.Body.Close()
-	}()
-
-	taskBody, err := io.ReadAll(taskResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("GetTaskByUPID: error getting body content -> %w", err)
-	}
-
-	var taskStruct TaskResponse
-	err = json.Unmarshal(taskBody, &taskStruct)
-	if err != nil {
-		return nil, fmt.Errorf("GetTaskByUPID: error json unmarshal body content -> %w", err)
-	}
-
-	if taskStruct.Data.Status == "stopped" {
-		endTime, err := GetTaskEndTime(&taskStruct.Data, token, apiToken)
+	if resp.Data.Status == "stopped" {
+		endTime, err := storeInstance.GetTaskEndTime(&resp.Data)
 		if err != nil {
 			return nil, fmt.Errorf("GetTaskByUPID: error getting task end time -> %w", err)
 		}
 
-		taskStruct.Data.EndTime = endTime
+		resp.Data.EndTime = endTime
 	}
-	return &taskStruct.Data, nil
+
+	return &resp.Data, nil
 }
 
-func GetTaskEndTime(task *Task, token *Token, apiToken *APIToken) (int64, error) {
+func (storeInstance *Store) GetTaskEndTime(task *Task) (int64, error) {
 	nextPage := true
-	var tasksStruct TasksResponse
+	var resp TasksResponse
 
-	if token == nil && apiToken == nil {
+	if storeInstance.LastToken == nil && storeInstance.APIToken == nil {
 		return -1, fmt.Errorf("GetTaskEndTime: token is required")
 	}
 
 	page := 1
 	for nextPage {
 		start := (page - 1) * 50
-		tasksReq, err := http.NewRequest(
+		err := storeInstance.ProxmoxHTTPRequest(
 			http.MethodGet,
-			fmt.Sprintf(
-				"%s/api2/json/nodes/localhost/tasks?typefilter=backup&running=false&start=%d&since=%d",
-				ProxyTargetURL,
-				start,
-				task.StartTime,
-			),
+			fmt.Sprintf("/api2/json/nodes/localhost/tasks?typefilter=backup&running=false&start=%d&since=%d", start, task.StartTime),
 			nil,
+			&resp,
 		)
 		if err != nil {
 			return -1, fmt.Errorf("GetTaskEndTime: error creating http request -> %w", err)
 		}
 
-		if token != nil {
-			tasksReq.Header.Set("Csrfpreventiontoken", token.CSRFToken)
-
-			tasksReq.AddCookie(&http.Cookie{
-				Name:  "PBSAuthCookie",
-				Value: token.Ticket,
-				Path:  "/",
-			})
-		} else if apiToken != nil {
-			tasksReq.Header.Set("Authorization", fmt.Sprintf("PBSAPIToken=%s:%s", apiToken.TokenId, apiToken.Value))
-		}
-
-		client := http.Client{
-			Timeout: time.Second * 10,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-		}
-
-		tasksResp, err := client.Do(tasksReq)
-		if err != nil {
-			return -1, fmt.Errorf("GetTaskEndTime: error executing http request -> %w", err)
-		}
-		defer func() {
-			_, _ = io.Copy(io.Discard, tasksResp.Body)
-			tasksResp.Body.Close()
-		}()
-
-		tasksBody, err := io.ReadAll(tasksResp.Body)
-		if err != nil {
-			return -1, fmt.Errorf("GetTaskEndTime: error reading body response -> %w", err)
-		}
-
-		err = json.Unmarshal(tasksBody, &tasksStruct)
-		if err != nil {
-			return -1, fmt.Errorf("GetTaskEndTime: error json unmarshal body response -> %w", err)
-		}
-
-		for _, taskStruct := range tasksStruct.Data {
-			if taskStruct.UPID == task.UPID {
-				return taskStruct.EndTime, nil
+		for _, respTask := range resp.Data {
+			if respTask.UPID == task.UPID {
+				return respTask.EndTime, nil
 			}
 		}
 
-		if tasksStruct.Total <= page*50 {
+		if resp.Total <= page*50 {
 			nextPage = false
 		}
 	}
