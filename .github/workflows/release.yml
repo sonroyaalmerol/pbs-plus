@@ -35,11 +35,6 @@ jobs:
         depends: 'proxmox-backup (>= 3.2), proxmox-backup-client (>= 3.2.5), rclone'
         desc: 'A Proxmox Backup Server (PBS) proxy server that adds a "disk-to-disk" file backup functionality within PBS Web UI'
         homepage: 'https://github.com/${{ github.repository }}'
-    - uses: actions/upload-artifact@v4
-      with:
-        name: artifact-deb
-        path: |
-          ./*.deb
     - name: Publish Release Assets
       uses: softprops/action-gh-release@v1
       with:
