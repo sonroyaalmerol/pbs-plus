@@ -91,6 +91,10 @@ jobs:
         choco install go-msi
         Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
         refreshenv
+        $tempDir = Join-Path -Path $Env:GITHUB_WORKSPACE/build/package/windows -ChildPath "temp"
+        New-Item -Path $tempDir -ItemType Directory -Force
+        $env:TEMP = $tempDir 
+        $env:TMP = $tempDir
         cd ./build/package/windows 
         go-msi make --msi $env:MSI_NAME --version $env:VERSION
     - name: Publish Release Assets
