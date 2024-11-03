@@ -92,7 +92,7 @@ jobs:
         Import-Module $env:ChocolateyInstall\helpers\chocolateyProfile.psm1
         refreshenv
         cd ./build/package/windows 
-        go-msi make --msi "$MSI_NAME" --version "$VERSION"
+        go-msi make --msi $env:MSI_NAME --version $env:VERSION
     - name: Publish Release Assets
       uses: softprops/action-gh-release@v1
       with:
