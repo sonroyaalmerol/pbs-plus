@@ -18,6 +18,7 @@ import (
 
 	"github.com/getlantern/systray"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/agent/sftp"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/agent/snapshots"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/utils"
 )
 
@@ -71,6 +72,8 @@ func main() {
 		wg.Add(1)
 		go sftp.Serve(ctx, &wg, sftpConfig.ServerConfig, "0.0.0.0", port, fmt.Sprintf("%s:\\", driveLetter))
 	}
+
+	defer snapshots.CloseAllSnapshots()
 
 	wg.Wait()
 }
@@ -159,5 +162,5 @@ func onReady(serverUrl string) func() {
 }
 
 func onExit() {
-
+	snapshots.CloseAllSnapshots()
 }

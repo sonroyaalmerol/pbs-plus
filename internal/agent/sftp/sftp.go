@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/pkg/sftp"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/agent/snapshots"
@@ -112,6 +113,7 @@ func handleSFTP(channel ssh.Channel, baseDir string) {
 	}
 
 	snapshot.Used = true
+	snapshot.LastUsedUpdate = time.Now()
 
 	server := sftp.NewRequestServer(channel, *sftpHandler)
 	if err := server.Serve(); err != nil {
@@ -119,4 +121,5 @@ func handleSFTP(channel ssh.Channel, baseDir string) {
 	}
 
 	snapshot.Used = false
+	snapshot.LastUsedUpdate = time.Now()
 }

@@ -14,10 +14,13 @@ import (
 )
 
 type WinVSSSnapshot struct {
-	SnapshotPath string
-	Id           string
-	Used         bool
+	SnapshotPath   string
+	Id             string
+	Used           bool
+	LastUsedUpdate time.Time
 }
+
+var CurrentSnapshots []*WinVSSSnapshot
 
 func symlinkSnapshot(symlinkPath string, id string, deviceObjectPath string) (string, error) {
 	snapshotSymLinkFolder := symlinkPath + "\\" + id + "\\"
@@ -78,12 +81,18 @@ func Snapshot(path string) (*WinVSSSnapshot, error) {
 	}
 
 	newSnapshot := WinVSSSnapshot{
-		SnapshotPath: snapshotPath,
-		Used:         false,
-		Id:           sc.ID,
+		SnapshotPath:   snapshotPath,
+		Used:           false,
+		LastUsedUpdate: time.Now(),
+		Id:             sc.ID,
 	}
 
 	go newSnapshot.closeOnStale()
+
+	if CurrentSnapshots == nil {
+		CurrentSnapshots = make([]*WinVSSSnapshot, 0)
+		CurrentSnapshots = append(CurrentSnapshots, &newSnapshot)
+	}
 
 	return &newSnapshot, nil
 }
@@ -94,12 +103,20 @@ func (instance *WinVSSSnapshot) closeOnStale() {
 	for {
 		select {
 		case <-ctx.Done():
-			_ = instance.Close()
+			if instance != nil {
+				_ = instance.Close()
+			}
 		default:
-			time.Sleep(2 * time.Minute)
+			time.Sleep(time.Minute)
+
+			if instance == nil {
+				cancel()
+			}
 
 			if !instance.Used {
-				cancel()
+				if time.Since(instance.LastUsedUpdate) > 2*time.Minute {
+					cancel()
+				}
 			}
 		}
 	}
@@ -111,5 +128,24 @@ func (instance *WinVSSSnapshot) Close() error {
 		return fmt.Errorf("Close: error deleting snapshot %s -> %w", instance.SnapshotPath, err)
 	}
 
+	if CurrentSnapshots != nil {
+		newCurrentSnapshots := []*WinVSSSnapshot{}
+		for _, snapshot := range CurrentSnapshots {
+			if snapshot.Id != instance.Id {
+				newCurrentSnapshots = append(newCurrentSnapshots, snapshot)
+			}
+		}
+
+		CurrentSnapshots = newCurrentSnapshots
+	}
+
 	return nil
+}
+
+func CloseAllSnapshots() {
+	if CurrentSnapshots != nil {
+		for _, snapshot := range CurrentSnapshots {
+			_ = snapshot.Close()
+		}
+	}
 }
