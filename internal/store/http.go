@@ -10,7 +10,7 @@ import (
 
 func (storeInstance *Store) ProxmoxHTTPRequest(method, url string, body io.Reader, respBody any) error {
 	req, err := http.NewRequest(
-		http.MethodGet,
+		method,
 		fmt.Sprintf(
 			"%s%s",
 			ProxyTargetURL,
