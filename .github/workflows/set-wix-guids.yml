@@ -1,0 +1,62 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-set-guid:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Go environment
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'  # You may change this to the latest Go version if needed
+
+    - name: Check for GUIDs in wix.json
+      id: check_guid
+      shell: pwsh
+      run: |
+        $jsonFile = "./build/package/windows/wix.json"
+        $wixJson = Get-Content $jsonFile | ConvertFrom-Json
+
+        # Check if any GUID is empty
+        $needsGuid = $false
+        if ([string]::IsNullOrEmpty($wixJson.'upgrade-code') -or 
+            [string]::IsNullOrEmpty($wixJson.files.guid) -or 
+            [string]::IsNullOrEmpty($wixJson.env.guid)) {
+          $needsGuid = $true
+        }
+
+        if ($needsGuid) {
+          echo "GUIDs are missing. Setting GUIDs."
+          echo "needs_guid=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+        } else {
+          echo "All GUIDs are set."
+          echo "needs_guid=false" | Out-File -FilePath $env:GITHUB_ENV -Append
+        }
+
+    - name: Install go-msi and set GUIDs
+      if: env.needs_guid == 'true'
+      run: |
+        go install github.com/wix-go/go-msi/cmd/go-msi@latest
+        go-msi set-guid -p ./build/package/windows/wix.json
+
+    - name: Commit and push changes
+      if: env.needs_guid == 'true'
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add ./build/package/windows/wix.json
+        git commit -m "Set GUIDs in wix.json"
+        git push origin main
+      shell: pwsh

@@ -29,38 +29,52 @@ type SFTPConfig struct {
 	BasePath     string `json:"base_path"`
 }
 
-func InitializeSFTPConfig(server string, basePath string) (*SFTPConfig, error) {
-	var newSftpConfig SFTPConfig
-
-	newSftpConfig.BasePath = basePath
-	newSftpConfig.Server = server
+func InitializeSFTPConfig(serverUrl string, driveLetter string) (*SFTPConfig, error) {
+	newSftpConfig := SFTPConfig{
+		BasePath: driveLetter,
+		Server:   serverUrl,
+	}
 
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return nil, fmt.Errorf("InitializeSFTPConfig: failed to get user config directory -> %w", err)
+		return &newSftpConfig, fmt.Errorf("ReadFileConfig: failed to get user config directory -> %w", err)
 	}
 
 	configBasePath := filepath.Join(configDir, "proxmox-agent")
 
 	err = os.MkdirAll(configBasePath, 0700)
 	if err != nil {
-		return nil, fmt.Errorf("InitializeSFTPConfig: failed to create proxmox-agent directory -> %w", err)
+		return &newSftpConfig, fmt.Errorf("ReadFileConfig: failed to create proxmox-agent directory -> %w", err)
 	}
 
-	savedConfigPath := filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", basePath))
+	savedConfigPath := filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", driveLetter))
 	jsonFile, err := os.Open(savedConfigPath)
-	if err == nil {
-		byteContent, err := io.ReadAll(jsonFile)
-		if err == nil {
-			err = json.Unmarshal(byteContent, &newSftpConfig)
-			if err == nil {
-				log.Printf("Using existing config: %s\n", savedConfigPath)
-			} else {
-				log.Println(err)
-			}
-		}
+	if err != nil {
+		return &newSftpConfig, fmt.Errorf("ReadFileConfig: failed to open json file -> %w", err)
 	}
-	jsonFile.Close()
+	defer jsonFile.Close()
+
+	byteContent, err := io.ReadAll(jsonFile)
+	if err != nil {
+		return &newSftpConfig, fmt.Errorf("ReadFileConfig: failed to read json file content -> %w", err)
+	}
+
+	var existingConfig SFTPConfig
+	err = json.Unmarshal(byteContent, &existingConfig)
+	if err != nil {
+		return &newSftpConfig, fmt.Errorf("ReadFileConfig: invalid json file (%s) -> %w", string(byteContent), err)
+	}
+
+	return &existingConfig, nil
+}
+
+func (config *SFTPConfig) PopulateKeys() error {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return fmt.Errorf("ReadFileConfig: failed to get user config directory -> %w", err)
+	}
+
+	configBasePath := filepath.Join(configDir, "proxmox-agent")
 
 	configSSH := &ssh.ServerConfig{
 		NoClientAuth:  false,
@@ -70,55 +84,46 @@ func InitializeSFTPConfig(server string, basePath string) (*SFTPConfig, error) {
 		},
 	}
 
-	var privateKey, pubKey []byte
-	var serverKey *string
-
-	if len(newSftpConfig.PrivateKey) == 0 || len(newSftpConfig.PublicKey) == 0 || len(newSftpConfig.ServerKey) == 0 {
-		privateKey, pubKey, err = utils.GenerateKeyPair(4096)
+	if len(config.PrivateKey) == 0 || len(config.PublicKey) == 0 || len(config.ServerKey) == 0 {
+		privateKey, pubKey, err := utils.GenerateKeyPair(4096)
 		if err != nil {
-			return nil, fmt.Errorf("InitializeSFTPConfig: failed to generate SSH key pair -> %w", err)
+			return fmt.Errorf("InitializeSFTPConfig: failed to generate SSH key pair -> %w", err)
 		}
 
-		newSftpConfig.PrivateKey = privateKey
-		newSftpConfig.PublicKey = pubKey
+		config.PrivateKey = privateKey
+		config.PublicKey = pubKey
 
-		serverKey, err = getServerPublicKey(server, string(pubKey), basePath)
+		serverKey, err := getServerPublicKey(config.Server, string(pubKey), config.BasePath)
 		if err != nil {
-			return nil, fmt.Errorf("InitializeSFTPConfig: failed to get server public ssh key -> %w", err)
+			return fmt.Errorf("InitializeSFTPConfig: failed to get server public ssh key -> %w", err)
 		}
 
-		newSftpConfig.ServerKey = []byte(*serverKey)
+		config.ServerKey = []byte(*serverKey)
 
-		knownHosts, err := os.OpenFile(filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", basePath)), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+		knownHosts, err := os.OpenFile(filepath.Join(configBasePath, fmt.Sprintf("%s-sftp.json", config.BasePath)), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 		if err != nil {
 			log.Println(err)
 		}
 		defer knownHosts.Close()
 
-		jsonContent, err := json.Marshal(newSftpConfig)
+		jsonContent, err := json.Marshal(config)
 		if err == nil {
 			if _, err = knownHosts.Write(jsonContent); err != nil {
 				log.Println(err)
 			}
 		}
-	} else {
-		privateKey = newSftpConfig.PrivateKey
-		pubKey = newSftpConfig.PublicKey
-		serverKeyStr := string(newSftpConfig.ServerKey)
-
-		serverKey = &serverKeyStr
 	}
 
-	parsedSigner, err := ssh.ParsePrivateKey(privateKey)
+	parsedSigner, err := ssh.ParsePrivateKey(config.PrivateKey)
 	if err != nil {
-		return nil, fmt.Errorf("InitializeSFTPConfig: failed to parse private key to signer -> %w", err)
+		return fmt.Errorf("InitializeSFTPConfig: failed to parse private key to signer -> %w", err)
 	}
 
 	configSSH.AddHostKey(parsedSigner)
 
-	parsedServerKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(*serverKey))
+	parsedServerKey, _, _, _, err := ssh.ParseAuthorizedKey(config.ServerKey)
 	if err != nil {
-		return nil, fmt.Errorf("InitializeSFTPConfig: failed to parse server key -> %w", err)
+		return fmt.Errorf("InitializeSFTPConfig: failed to parse server key -> %w", err)
 	}
 
 	configSSH.PublicKeyCallback = func(conn ssh.ConnMetadata, auth ssh.PublicKey) (*ssh.Permissions, error) {
@@ -132,9 +137,9 @@ func InitializeSFTPConfig(server string, basePath string) (*SFTPConfig, error) {
 		return nil, fmt.Errorf("InitializeSFTPConfig: unknown public key for %s -> %w", conn.RemoteAddr().String(), err)
 	}
 
-	newSftpConfig.ServerConfig = configSSH
+	config.ServerConfig = configSSH
 
-	return &newSftpConfig, nil
+	return nil
 }
 
 func logAuthAttempt(conn ssh.ConnMetadata, _ string, err error) {

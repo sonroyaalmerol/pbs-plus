@@ -48,13 +48,13 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
   release-windows-amd64-agent:
     name: release agent windows/amd64
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - uses: wangyoucao577/go-release-action@v1
+      id: go_build
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         goos: windows 
@@ -63,3 +63,37 @@ jobs:
         executable_compression: upx 
         binary_name: pbs-d2d-agent
         project_path: ./cmd/pbs_windows_agent
+    - uses: actions/upload-artifact@v4
+      with:
+        name: windows-binary
+        path: ${{steps.go_build.outputs.release_asset_dir}}/pbs-d2d-agent.exe
+
+  release-windows-amd64-agent-installer:
+    name: release agent installer windows/amd64
+    runs-on: windows-latest
+    needs: release-windows-amd64-agent
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        name: windows-binary
+        path: $GITHUB_WORKSPACE/build/package/windows/
+    - uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'  # You may change this to the latest Go version if needed
+    - env:
+        MSI_NAME: "${{ github.event.repository.name }}-${{ github.event.release.tag_name }}-windows.msi"
+        VERSION: ${{ github.event.release.tag_name[1:] }}
+      shell: pwsh
+      run: |
+        go install github.com/wix-go/go-msi/cmd/go-msi@latest
+        cd ./build/package/windows 
+        go-msi make --msi "$MSI_NAME" --version "$VERSION"
+    - name: Publish Release Assets
+      uses: softprops/action-gh-release@v1
+      with:
+        tag: ${{ github.event.release.tag_name }}
+        files: ./build/package/windows/*.msi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
