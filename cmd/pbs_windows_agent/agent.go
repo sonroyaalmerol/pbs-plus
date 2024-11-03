@@ -105,11 +105,7 @@ func run(serverUrl string) func() {
 		for _, driveLetter := range drives {
 			rune := []rune(driveLetter)[0]
 
-			sftpConfig, err := sftp.InitializeSFTPConfig(serverUrl, driveLetter)
-			if err != nil {
-				showMessageBox("Error", fmt.Sprintf("Unable to initialize SFTP: %s", err))
-				os.Exit(1)
-			}
+			sftpConfig, _ := sftp.InitializeSFTPConfig(serverUrl, driveLetter)
 
 			err = sftpConfig.PopulateKeys()
 			if err != nil {
