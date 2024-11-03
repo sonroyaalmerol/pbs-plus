@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Token struct {
@@ -71,7 +72,9 @@ func (storeInstance *Store) CreateAPIToken() (*APIToken, error) {
 		&tokenResp,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("CreateAPIToken: error executing http request token post -> %w", err)
+		if !strings.Contains(err.Error(), "already exists") {
+			return nil, fmt.Errorf("CreateAPIToken: error executing http request token post -> %w", err)
+		}
 	}
 
 	aclBody, err := json.Marshal(&ACLRequest{
@@ -90,7 +93,9 @@ func (storeInstance *Store) CreateAPIToken() (*APIToken, error) {
 		nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("CreateAPIToken: error executing http request acl put -> %w", err)
+		if !strings.Contains(err.Error(), "already exists") {
+			return nil, fmt.Errorf("CreateAPIToken: error executing http request acl put -> %w", err)
+		}
 	}
 
 	return &tokenResp.Data, nil

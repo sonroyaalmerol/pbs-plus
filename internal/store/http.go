@@ -39,6 +39,8 @@ func (storeInstance *Store) ProxmoxHTTPRequest(method, url string, body io.Reade
 		req.Header.Set("Authorization", fmt.Sprintf("PBSAPIToken=%s:%s", storeInstance.APIToken.TokenId, storeInstance.APIToken.Value))
 	}
 
+	req.Header.Add("Content-Type", "application/json")
+
 	if storeInstance.HTTPClient == nil {
 		storeInstance.HTTPClient = &http.Client{
 			Timeout:   time.Second * 30,
@@ -63,7 +65,7 @@ func (storeInstance *Store) ProxmoxHTTPRequest(method, url string, body io.Reade
 	if respBody != nil {
 		err = json.Unmarshal(rawBody, respBody)
 		if err != nil {
-			return fmt.Errorf("ProxmoxHTTPRequest: error json unmarshal body content -> %w", err)
+			return fmt.Errorf("ProxmoxHTTPRequest: error json unmarshal body content (%s) -> %w", string(rawBody), err)
 		}
 	}
 

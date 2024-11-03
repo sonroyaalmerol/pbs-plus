@@ -44,7 +44,7 @@ func ExtractTokenFromRequest(r *http.Request, storeInstance *store.Store) *store
 	}
 
 	token.CSRFToken = r.Header.Get("csrfpreventiontoken")
-	token.Ticket = pbsAuthCookie.Value
+	token.Ticket = decodedAuthCookie
 	token.Username = cookieSplit[1]
 
 	storeInstance.LastToken = &token
