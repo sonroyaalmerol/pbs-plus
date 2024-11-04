@@ -3,6 +3,8 @@ package store
 import (
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -44,6 +46,23 @@ func (storeInstance *Store) GetMostRecentTask(job *Job, since *time.Time) (*Task
 
 	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("GetMostRecentTask: error getting tasks: not found")
+	}
+
+	if strings.Contains(resp.Data[0].UPID, ":reader:") {
+		resp.Data[0].UPID = strings.ReplaceAll(resp.Data[0].UPID, ":reader:", ":backup:")
+		splittedUPID := strings.Split(resp.Data[0].UPID, ":")
+		currInVal, err := strconv.ParseInt(splittedUPID[4], 16, 64)
+		if err != nil {
+			return nil, fmt.Errorf("GetMostRecentTask: error converting hex -> %w", err)
+		}
+		splittedUPID[4] = fmt.Sprintf("%08X", currInVal-1)
+		idx := strings.LastIndex(splittedUPID[7], "-")
+		if idx != -1 {
+			splittedUPID[7] = splittedUPID[7][:idx]
+		}
+
+		resp.Data[0].UPID = strings.Join(splittedUPID, ":")
+		resp.Data[0].WorkerType = "backup"
 	}
 
 	return &resp.Data[0], nil
