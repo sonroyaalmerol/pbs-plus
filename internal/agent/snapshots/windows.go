@@ -49,16 +49,19 @@ func Snapshot(driveLetter string) (*WinVSSSnapshot, error) {
 	err = vss.CreateLink(snapshotPath, volName)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			if KnownSnapshots != nil {
-				for _, knownSnap := range KnownSnapshots {
-					if knownSnap.SnapshotPath == snapshotPath && time.Since(knownSnap.LastAccessed) < time.Hour {
-						return knownSnap, nil
+			if _, err := vss.Get(snapshotPath); err == nil {
+				if KnownSnapshots != nil {
+					for _, knownSnap := range KnownSnapshots {
+						if knownSnap.SnapshotPath == snapshotPath && time.Since(knownSnap.LastAccessed) < time.Hour {
+							return knownSnap, nil
+						} else {
+							knownSnap.Close()
+							break
+						}
 					}
 				}
 			}
-			if _, err := vss.Get(snapshotPath); err == nil {
-				_ = vss.Remove(snapshotPath)
-			}
+
 			_ = os.Remove(snapshotPath)
 
 			if err := vss.CreateLink(snapshotPath, volName); err != nil {
@@ -89,11 +92,8 @@ func Snapshot(driveLetter string) (*WinVSSSnapshot, error) {
 	return &newSnapshot, nil
 }
 
-func (instance *WinVSSSnapshot) Close() error {
-	err := vss.Remove(instance.Id)
-	if err != nil {
-		return fmt.Errorf("Close: error deleting snapshot %s -> %w", instance.SnapshotPath, err)
-	}
+func (instance *WinVSSSnapshot) Close() {
+	_ = vss.Remove(instance.Id)
 
 	if KnownSnapshots != nil {
 		newKnownSnapshots := []*WinVSSSnapshot{}
@@ -106,13 +106,13 @@ func (instance *WinVSSSnapshot) Close() error {
 		KnownSnapshots = newKnownSnapshots
 	}
 
-	return nil
+	return
 }
 
 func CloseAllSnapshots() {
 	if KnownSnapshots != nil {
 		for _, snapshot := range KnownSnapshots {
-			_ = snapshot.Close()
+			snapshot.Close()
 		}
 	}
 }
