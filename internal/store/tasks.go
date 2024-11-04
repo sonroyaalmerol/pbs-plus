@@ -57,7 +57,7 @@ func (storeInstance *Store) GetMostRecentTask(job *Job, since *time.Time) (*Task
 		}
 		splittedUPID[4] = fmt.Sprintf("%08X", currInVal-1)
 		idx := strings.LastIndex(splittedUPID[7], "-")
-		if idx != -1 {
+		if idx != -1 && len(splittedUPID[7][idx+1:]) == 8 {
 			splittedUPID[7] = splittedUPID[7][:idx]
 		}
 
