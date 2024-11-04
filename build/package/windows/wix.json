@@ -9,7 +9,10 @@
       "pbs-d2d-agent.exe"
     ]
   },
-  "env": {},
+  "env": {
+    "guid": "",
+    "vars": null
+  },
   "shortcuts": {},
   "choco": {
     "description": "Orchestrating backups with Proxmox Backup Server",
