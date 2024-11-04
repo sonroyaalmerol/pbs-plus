@@ -54,12 +54,13 @@ func Snapshot(driveLetter string) (*WinVSSSnapshot, error) {
 					for _, knownSnap := range KnownSnapshots {
 						if knownSnap.SnapshotPath == snapshotPath && time.Since(knownSnap.LastAccessed) < time.Hour {
 							return knownSnap, nil
-						} else {
+						} else if time.Since(knownSnap.LastAccessed) >= time.Hour {
 							knownSnap.Close()
 							break
 						}
 					}
 				}
+				_ = vss.Remove(snapshotPath)
 			}
 
 			_ = os.Remove(snapshotPath)
