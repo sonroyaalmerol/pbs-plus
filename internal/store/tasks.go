@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"net/http"
+	"time"
 )
 
 type TasksResponse struct {
@@ -29,11 +30,11 @@ type Task struct {
 	ExitStatus string `json:"exitstatus"`
 }
 
-func (storeInstance *Store) GetMostRecentTask(job *Job) (*Task, error) {
+func (storeInstance *Store) GetMostRecentTask(job *Job, since *time.Time) (*Task, error) {
 	var resp TasksResponse
 	err := storeInstance.ProxmoxHTTPRequest(
 		http.MethodGet,
-		fmt.Sprintf("/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&limit=1", job.Store),
+		fmt.Sprintf("/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&limit=1&since=%d", job.Store, since.Unix()),
 		nil,
 		&resp,
 	)

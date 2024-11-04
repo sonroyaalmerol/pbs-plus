@@ -96,46 +96,35 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 		return nil, fmt.Errorf("RunBackup: proxmox-backup-client start error (%s) -> %w", cmd.String(), err)
 	}
 
+	timeStarted := time.Now()
+
 	for {
 		line, err := logBuffer.ReadString('\n')
 		if err != nil && line != "" {
 			return nil, fmt.Errorf("RunBackup: log buffer readString error -> %w", err)
 		}
 
-		if strings.Contains(line, "Starting backup protocol") {
+		if strings.Contains(line, "Upload directory") {
 			break
 		}
 
 		time.Sleep(time.Millisecond * 100)
 	}
 
-	var task *store.Task
-	for {
-		task, err = storeInstance.GetMostRecentTask(job)
-		if err != nil {
-			_ = cmd.Process.Kill()
-			if agentMount != nil {
-				agentMount.Unmount()
-			}
+	time.Sleep(time.Millisecond * 500)
 
-			return nil, fmt.Errorf("RunBackup: unable to get most recent task -> %w", err)
+	task, err := storeInstance.GetMostRecentTask(job, &timeStarted)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		if agentMount != nil {
+			agentMount.Unmount()
 		}
 
-		if task.WorkerType == "backup" {
-			break
-		}
-
-		if cmd.ProcessState != nil {
-			break
-		}
-
-		time.Sleep(time.Millisecond * 500)
+		return nil, fmt.Errorf("RunBackup: unable to get most recent task -> %w", err)
 	}
 
-	if task != nil {
-		job.LastRunUpid = &task.UPID
-		job.LastRunState = &task.Status
-	}
+	job.LastRunUpid = &task.UPID
+	job.LastRunState = &task.Status
 
 	err = storeInstance.UpdateJob(*job)
 	if err != nil {
