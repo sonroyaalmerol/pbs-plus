@@ -124,7 +124,7 @@ func handleSFTP(channel ssh.Channel, driveLetter string) {
 	ctx := context.Background()
 	sftpHandler, err := NewSftpHandler(ctx, driveLetter, snapshot)
 	if err != nil {
-		_ = snapshot.Close()
+		snapshot.Close()
 		utils.ShowMessageBox("Fatal Error", fmt.Sprintf("failed to initialize handler: %s", err))
 		os.Exit(1)
 	}

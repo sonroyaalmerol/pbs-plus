@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mxk/go-vss"
@@ -20,6 +21,7 @@ type WinVSSSnapshot struct {
 }
 
 var KnownSnapshots []*WinVSSSnapshot
+var SnapLock sync.Mutex
 
 func getAppDataFolder() (string, error) {
 	configDir, err := os.UserConfigDir()
@@ -52,11 +54,13 @@ func Snapshot(driveLetter string) (*WinVSSSnapshot, error) {
 			if _, err := vss.Get(snapshotPath); err == nil {
 				if KnownSnapshots != nil {
 					for _, knownSnap := range KnownSnapshots {
-						if knownSnap.SnapshotPath == snapshotPath && time.Since(knownSnap.LastAccessed) < time.Hour {
+						if knownSnap.SnapshotPath == snapshotPath && time.Since(knownSnap.LastAccessed) < (15*time.Minute) {
 							return knownSnap, nil
-						} else if time.Since(knownSnap.LastAccessed) >= time.Hour {
+						} else if time.Since(knownSnap.LastAccessed) >= (15 * time.Minute) {
 							knownSnap.Close()
-							break
+							if knownSnap.SnapshotPath == snapshotPath {
+								break
+							}
 						}
 					}
 				}
@@ -85,15 +89,21 @@ func Snapshot(driveLetter string) (*WinVSSSnapshot, error) {
 		Id:           sc.ID,
 	}
 
+	SnapLock.Lock()
 	if KnownSnapshots == nil {
 		KnownSnapshots = make([]*WinVSSSnapshot, 0)
-		KnownSnapshots = append(KnownSnapshots, &newSnapshot)
 	}
+
+	KnownSnapshots = append(KnownSnapshots, &newSnapshot)
+	SnapLock.Unlock()
 
 	return &newSnapshot, nil
 }
 
 func (instance *WinVSSSnapshot) Close() {
+	SnapLock.Lock()
+	defer SnapLock.Unlock()
+
 	_ = vss.Remove(instance.Id)
 
 	if KnownSnapshots != nil {

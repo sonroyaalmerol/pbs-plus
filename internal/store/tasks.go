@@ -34,7 +34,7 @@ func (storeInstance *Store) GetMostRecentTask(job *Job, since *time.Time) (*Task
 	var resp TasksResponse
 	err := storeInstance.ProxmoxHTTPRequest(
 		http.MethodGet,
-		fmt.Sprintf("/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&limit=1&since=%d", job.Store, since.Unix()),
+		fmt.Sprintf("/api2/json/nodes/localhost/tasks?store=%s&typefilter=backup&start=0&limit=1&since=%d", job.Store, since.Unix()),
 		nil,
 		&resp,
 	)
