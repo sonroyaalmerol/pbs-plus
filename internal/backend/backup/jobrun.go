@@ -109,18 +109,33 @@ func RunBackup(job *store.Job, storeInstance *store.Store) (*store.Task, error) 
 		time.Sleep(time.Millisecond * 100)
 	}
 
-	task, err := storeInstance.GetMostRecentTask(job)
-	if err != nil {
-		_ = cmd.Process.Kill()
-		if agentMount != nil {
-			agentMount.Unmount()
+	var task *store.Task
+	for {
+		task, err = storeInstance.GetMostRecentTask(job)
+		if err != nil {
+			_ = cmd.Process.Kill()
+			if agentMount != nil {
+				agentMount.Unmount()
+			}
+
+			return nil, fmt.Errorf("RunBackup: unable to get most recent task -> %w", err)
 		}
 
-		return nil, fmt.Errorf("RunBackup: unable to get most recent task -> %w", err)
+		if task.WorkerType == "backup" {
+			break
+		}
+
+		if cmd.ProcessState != nil {
+			break
+		}
+
+		time.Sleep(time.Millisecond * 500)
 	}
 
-	job.LastRunUpid = &task.UPID
-	job.LastRunState = &task.Status
+	if task != nil {
+		job.LastRunUpid = &task.UPID
+		job.LastRunState = &task.Status
+	}
 
 	err = storeInstance.UpdateJob(*job)
 	if err != nil {
