@@ -58,6 +58,7 @@ jobs:
         executable_compression: upx 
         binary_name: pbs-d2d-agent
         project_path: ./cmd/pbs_windows_agent
+        ldflags: -H=windowsgui
     - uses: actions/upload-artifact@v4
       with:
         name: windows-binary

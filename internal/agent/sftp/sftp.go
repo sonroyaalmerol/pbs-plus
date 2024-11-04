@@ -55,7 +55,7 @@ func handleConnection(conn net.Conn, sftpConfig *SFTPConfig, baseDir string) {
 		return
 	}
 
-	if strings.Contains(conn.RemoteAddr().String(), server.Hostname()) {
+	if !strings.Contains(conn.RemoteAddr().String(), server.Hostname()) {
 		log.Printf("WARNING: an unregistered client has attempted to connect: %s", conn.RemoteAddr().String())
 		return
 	}
