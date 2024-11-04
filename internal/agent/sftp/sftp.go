@@ -9,21 +9,23 @@ import (
 	"log"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/pkg/sftp"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/agent/snapshots"
+	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/utils"
 	"golang.org/x/crypto/ssh"
 )
 
-func Serve(ctx context.Context, wg *sync.WaitGroup, sftpConfig *SFTPConfig, address, port string, baseDir string) {
+func Serve(ctx context.Context, wg *sync.WaitGroup, sftpConfig *SFTPConfig, address, port string, driveLetter string) {
 	defer wg.Done()
 	listenAt := fmt.Sprintf("%s:%s", address, port)
 	listener, err := net.Listen("tcp", listenAt)
 	if err != nil {
-		log.Fatalf("failed to listen on %s: %v", listenAt, err)
+		utils.ShowMessageBox("Fatal Error", fmt.Sprintf("Port is already in use! Failed to listen on %s: %v", listenAt, err))
+		os.Exit(1)
 	}
 	defer listener.Close()
 
@@ -37,32 +39,32 @@ func Serve(ctx context.Context, wg *sync.WaitGroup, sftpConfig *SFTPConfig, addr
 		default:
 			conn, err := listener.Accept()
 			if err != nil {
-				log.Printf("failed to accept connection: %v", err)
+				utils.ShowMessageBox("Error", fmt.Sprintf("failed to accept connection: %v", err))
 				continue
 			}
 
-			go handleConnection(conn, sftpConfig, baseDir)
+			go handleConnection(conn, sftpConfig, driveLetter)
 		}
 	}
 }
 
-func handleConnection(conn net.Conn, sftpConfig *SFTPConfig, baseDir string) {
+func handleConnection(conn net.Conn, sftpConfig *SFTPConfig, driveLetter string) {
 	defer conn.Close()
 
 	server, err := url.Parse(sftpConfig.Server)
 	if err != nil {
-		log.Printf("failed to parse server IP: %v", err)
+		utils.ShowMessageBox("Error", fmt.Sprintf("failed to parse server IP: %v", err))
 		return
 	}
 
 	if !strings.Contains(conn.RemoteAddr().String(), server.Hostname()) {
-		log.Printf("WARNING: an unregistered client has attempted to connect: %s", conn.RemoteAddr().String())
+		utils.ShowMessageBox("Error", fmt.Sprintf("WARNING: an unregistered client has attempted to connect: %s", conn.RemoteAddr().String()))
 		return
 	}
 
 	sconn, chans, reqs, err := ssh.NewServerConn(conn, sftpConfig.ServerConfig)
 	if err != nil {
-		log.Printf("failed to perform SSH handshake: %v", err)
+		utils.ShowMessageBox("Error", fmt.Sprintf("failed to perform SSH handshake: %v", err))
 		return
 	}
 
@@ -82,7 +84,7 @@ func handleConnection(conn net.Conn, sftpConfig *SFTPConfig, baseDir string) {
 		}
 
 		go handleRequests(requests)
-		go handleSFTP(channel, baseDir)
+		go handleSFTP(channel, driveLetter)
 	}
 }
 
@@ -95,7 +97,7 @@ func handlePingPong(reqs <-chan *ssh.Request) {
 				log.Println("Failed to reply to ping:", err)
 			}
 		} else {
-			log.Printf("Received unknown request type: %s", req.Type)
+			log.Printf("Received unknown request type: %s\n", req.Type)
 		}
 	}
 }
@@ -110,29 +112,25 @@ func handleRequests(requests <-chan *ssh.Request) {
 	}
 }
 
-func handleSFTP(channel ssh.Channel, baseDir string) {
+func handleSFTP(channel ssh.Channel, driveLetter string) {
 	defer channel.Close()
 
-	snapshot, err := snapshots.Snapshot(baseDir)
+	snapshot, err := snapshots.Snapshot(driveLetter)
 	if err != nil {
-		log.Fatalf("failed to initialize snapshot: %s", err)
+		utils.ShowMessageBox("Fatal Error", fmt.Sprintf("failed to initialize snapshot: %s", err))
+		os.Exit(1)
 	}
 
 	ctx := context.Background()
-	sftpHandler, err := NewSftpHandler(ctx, baseDir, snapshot)
+	sftpHandler, err := NewSftpHandler(ctx, driveLetter, snapshot)
 	if err != nil {
 		_ = snapshot.Close()
-		log.Fatalf("failed to initialize handler: %s", err)
+		utils.ShowMessageBox("Fatal Error", fmt.Sprintf("failed to initialize handler: %s", err))
+		os.Exit(1)
 	}
-
-	snapshot.Used = true
-	snapshot.LastUsedUpdate = time.Now()
 
 	server := sftp.NewRequestServer(channel, *sftpHandler)
 	if err := server.Serve(); err != nil {
-		log.Printf("sftp server completed with error: %s", err)
+		log.Printf("sftp server completed with error: %s\n", err)
 	}
-
-	snapshot.Used = false
-	snapshot.LastUsedUpdate = time.Now()
 }

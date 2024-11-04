@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"syscall"
@@ -35,7 +34,7 @@ func main() {
 	serverUrl, ok := os.LookupEnv("PBS_AGENT_SERVER")
 	if !ok {
 		for {
-			serverUrl = promptInput("PBS Agent", "Server URL")
+			serverUrl = utils.PromptInput("PBS Agent", "Server URL")
 
 			_, err := url.ParseRequestURI(serverUrl)
 			if err == nil {
@@ -49,7 +48,7 @@ func main() {
 
 	_, err := url.ParseRequestURI(serverUrl)
 	if err != nil {
-		showMessageBox("Error", fmt.Sprintf("Invalid server URL: %s", err))
+		utils.ShowMessageBox("Error", fmt.Sprintf("Invalid server URL: %s", err))
 		os.Exit(1)
 	}
 
@@ -65,18 +64,18 @@ func main() {
 
 		err = sftpConfig.PopulateKeys()
 		if err != nil {
-			showMessageBox("Error", fmt.Sprintf("Unable to populate SFTP keys: %s", err))
+			utils.ShowMessageBox("Error", fmt.Sprintf("Unable to populate SFTP keys: %s", err))
 			os.Exit(1)
 		}
 
 		port, err := utils.DriveLetterPort(rune)
 		if err != nil {
-			showMessageBox("Error", fmt.Sprintf("Unable to map letter to port: %s", err))
+			utils.ShowMessageBox("Error", fmt.Sprintf("Unable to map letter to port: %s", err))
 			os.Exit(1)
 		}
 
 		wg.Add(1)
-		go sftp.Serve(ctx, &wg, sftpConfig, "0.0.0.0", port, fmt.Sprintf("%s:\\", driveLetter))
+		go sftp.Serve(ctx, &wg, sftpConfig, "0.0.0.0", port, driveLetter)
 	}
 
 	defer snapshots.CloseAllSnapshots()
@@ -87,28 +86,6 @@ func main() {
 	wg.Wait()
 }
 
-func showMessageBox(title, message string) {
-	windows.MessageBox(0,
-		windows.StringToUTF16Ptr(message),
-		windows.StringToUTF16Ptr(title),
-		windows.MB_OK|windows.MB_ICONERROR)
-}
-
-func promptInput(title, prompt string) string {
-	cmd := exec.Command("powershell", "-Command", fmt.Sprintf(`
-		[void][Reflection.Assembly]::LoadWithPartialName('Microsoft.VisualBasic');
-		$input = [Microsoft.VisualBasic.Interaction]::InputBox('%s', '%s');
-    $input`, prompt, title))
-
-	output, err := cmd.Output()
-	if err != nil {
-		fmt.Println("Failed to get input:", err)
-		return ""
-	}
-
-	return strings.TrimSpace(string(output))
-}
-
 func onReady(serverUrl string) func() {
 	return func() {
 		systray.SetIcon(icon)
@@ -117,7 +94,7 @@ func onReady(serverUrl string) func() {
 
 		url, err := url.Parse(serverUrl)
 		if err != nil {
-			showMessageBox("Error", fmt.Sprintf("Failed to parse server URL: %s", err))
+			utils.ShowMessageBox("Error", fmt.Sprintf("Failed to parse server URL: %s", err))
 			os.Exit(1)
 		}
 
@@ -152,6 +129,6 @@ func runAsAdmin() {
 
 	err := windows.ShellExecute(0, verbPtr, exePtr, argPtr, cwdPtr, showCmd)
 	if err != nil {
-		showMessageBox("Error", fmt.Sprintf("Failed to run as administrator: %s", err))
+		utils.ShowMessageBox("Error", fmt.Sprintf("Failed to run as administrator: %s", err))
 	}
 }

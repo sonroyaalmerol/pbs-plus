@@ -10,19 +10,20 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/pkg/sftp"
 	"github.com/sonroyaalmerol/pbs-d2d-backup/internal/agent/snapshots"
 )
 
 type SftpHandler struct {
-	mu           sync.Mutex
-	BasePath     string
-	SnapshotPath string
+	mu          sync.Mutex
+	DriveLetter string
+	Snapshot    *snapshots.WinVSSSnapshot
 }
 
-func NewSftpHandler(ctx context.Context, basePath string, snapshot *snapshots.WinVSSSnapshot) (*sftp.Handlers, error) {
-	handler := &SftpHandler{BasePath: basePath, SnapshotPath: snapshot.SnapshotPath}
+func NewSftpHandler(ctx context.Context, driveLetter string, snapshot *snapshots.WinVSSSnapshot) (*sftp.Handlers, error) {
+	handler := &SftpHandler{DriveLetter: driveLetter, Snapshot: snapshot}
 
 	return &sftp.Handlers{
 		FileGet:  handler,
@@ -36,6 +37,7 @@ func (h *SftpHandler) Fileread(r *sftp.Request) (io.ReaderAt, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	h.Snapshot.LastAccessed = time.Now()
 	h.setFilePath(r)
 
 	file, err := h.fetch(r.Filepath, os.O_RDONLY)
@@ -64,6 +66,7 @@ func (h *SftpHandler) Filelist(r *sftp.Request) (sftp.ListerAt, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	h.Snapshot.LastAccessed = time.Now()
 	h.setFilePath(r)
 
 	switch r.Method {

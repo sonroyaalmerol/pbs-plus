@@ -58,7 +58,7 @@ func (h *SftpHandler) FileStat(filename string) (*FileLister, error) {
 	var stat fs.FileInfo
 	var err error
 
-	isRoot := strings.TrimPrefix(filename, h.SnapshotPath) == ""
+	isRoot := strings.TrimPrefix(filename, h.Snapshot.SnapshotPath) == ""
 
 	if isRoot {
 		stat, err = os.Stat(filename)
@@ -80,7 +80,7 @@ func (h *SftpHandler) FileStat(filename string) (*FileLister, error) {
 }
 
 func (h *SftpHandler) setFilePath(r *sftp.Request) {
-	r.Filepath = filepath.Join(h.SnapshotPath, filepath.Clean(r.Filepath))
+	r.Filepath = filepath.Join(h.Snapshot.SnapshotPath, filepath.Clean(r.Filepath))
 }
 
 func (h *SftpHandler) fetch(path string, mode int) (*os.File, error) {

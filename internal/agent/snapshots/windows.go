@@ -4,23 +4,22 @@
 package snapshots
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mxk/go-vss"
 )
 
 type WinVSSSnapshot struct {
-	SnapshotPath   string
-	Id             string
-	Used           bool
-	LastUsedUpdate time.Time
+	SnapshotPath string
+	Id           string
+	LastAccessed time.Time
 }
 
-var CurrentSnapshots []*WinVSSSnapshot
+var KnownSnapshots []*WinVSSSnapshot
 
 func getAppDataFolder() (string, error) {
 	configDir, err := os.UserConfigDir()
@@ -38,20 +37,36 @@ func getAppDataFolder() (string, error) {
 	return configBasePath, nil
 }
 
-func Snapshot(path string) (*WinVSSSnapshot, error) {
-	volName := filepath.VolumeName(fmt.Sprintf("%s:\\", path))
-	volName += "\\"
+func Snapshot(driveLetter string) (*WinVSSSnapshot, error) {
+	volName := filepath.VolumeName(fmt.Sprintf("%s:", driveLetter))
 
 	appDataFolder, err := getAppDataFolder()
 	if err != nil {
 		return nil, fmt.Errorf("Snapshot: error getting app data folder -> %w", err)
 	}
 
-	snapshotPath := filepath.Join(appDataFolder, "VSS", path)
-
+	snapshotPath := filepath.Join(appDataFolder, "VSS", driveLetter)
 	err = vss.CreateLink(snapshotPath, volName)
 	if err != nil {
-		return nil, fmt.Errorf("Snapshot: error creating snapshot -> %w", err)
+		if strings.Contains(err.Error(), "already exists") {
+			if KnownSnapshots != nil {
+				for _, knownSnap := range KnownSnapshots {
+					if knownSnap.SnapshotPath == snapshotPath && time.Since(knownSnap.LastAccessed) < time.Hour {
+						return knownSnap, nil
+					}
+				}
+			}
+			if _, err := vss.Get(snapshotPath); err == nil {
+				_ = vss.Remove(snapshotPath)
+			}
+			_ = os.Remove(snapshotPath)
+
+			if err := vss.CreateLink(snapshotPath, volName); err != nil {
+				return nil, fmt.Errorf("Snapshot: error creating snapshot (%s to %s) -> %w", volName, snapshotPath, err)
+			}
+		} else {
+			return nil, fmt.Errorf("Snapshot: error creating snapshot (%s to %s) -> %w", volName, snapshotPath, err)
+		}
 	}
 
 	sc, err := vss.Get(snapshotPath)
@@ -61,45 +76,17 @@ func Snapshot(path string) (*WinVSSSnapshot, error) {
 	}
 
 	newSnapshot := WinVSSSnapshot{
-		SnapshotPath:   snapshotPath,
-		Used:           false,
-		LastUsedUpdate: time.Now(),
-		Id:             sc.ID,
+		SnapshotPath: snapshotPath,
+		LastAccessed: time.Now(),
+		Id:           sc.ID,
 	}
 
-	go newSnapshot.closeOnStale()
-
-	if CurrentSnapshots == nil {
-		CurrentSnapshots = make([]*WinVSSSnapshot, 0)
-		CurrentSnapshots = append(CurrentSnapshots, &newSnapshot)
+	if KnownSnapshots == nil {
+		KnownSnapshots = make([]*WinVSSSnapshot, 0)
+		KnownSnapshots = append(KnownSnapshots, &newSnapshot)
 	}
 
 	return &newSnapshot, nil
-}
-
-func (instance *WinVSSSnapshot) closeOnStale() {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	for {
-		select {
-		case <-ctx.Done():
-			if instance != nil {
-				_ = instance.Close()
-			}
-		default:
-			time.Sleep(time.Minute)
-
-			if instance == nil {
-				cancel()
-			}
-
-			if !instance.Used {
-				if time.Since(instance.LastUsedUpdate) > 2*time.Minute {
-					cancel()
-				}
-			}
-		}
-	}
 }
 
 func (instance *WinVSSSnapshot) Close() error {
@@ -108,23 +95,23 @@ func (instance *WinVSSSnapshot) Close() error {
 		return fmt.Errorf("Close: error deleting snapshot %s -> %w", instance.SnapshotPath, err)
 	}
 
-	if CurrentSnapshots != nil {
-		newCurrentSnapshots := []*WinVSSSnapshot{}
-		for _, snapshot := range CurrentSnapshots {
+	if KnownSnapshots != nil {
+		newKnownSnapshots := []*WinVSSSnapshot{}
+		for _, snapshot := range KnownSnapshots {
 			if snapshot.Id != instance.Id {
-				newCurrentSnapshots = append(newCurrentSnapshots, snapshot)
+				newKnownSnapshots = append(newKnownSnapshots, snapshot)
 			}
 		}
 
-		CurrentSnapshots = newCurrentSnapshots
+		KnownSnapshots = newKnownSnapshots
 	}
 
 	return nil
 }
 
 func CloseAllSnapshots() {
-	if CurrentSnapshots != nil {
-		for _, snapshot := range CurrentSnapshots {
+	if KnownSnapshots != nil {
+		for _, snapshot := range KnownSnapshots {
 			_ = snapshot.Close()
 		}
 	}
