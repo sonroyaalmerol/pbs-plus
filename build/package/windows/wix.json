@@ -9,19 +9,7 @@
       "pbs-d2d-agent.exe"
     ]
   },
-  "env": {
-    "guid": "67b2be3d-8b6a-4bbc-a973-6a2876b03c2e",
-    "vars": [
-      {
-        "name": "PATH",
-        "value": "[INSTALLDIR]",
-        "permanent": "no",
-        "system": "no",
-        "action": "set",
-        "part": "last"
-      }
-    ]
-  },
+  "env": {},
   "shortcuts": {},
   "choco": {
     "description": "Orchestrating backups with Proxmox Backup Server",
@@ -31,7 +19,7 @@
   },
   "hooks": [
     {
-      "command": "sc.exe create PBSAgent binPath=\"[INSTALLDIR]pbs-d2d-agent.exe\" type=share start=auto DisplayName=\"PBS Agent\"",
+      "command": "sc.exe create PBSAgent binPath=\"[INSTALLDIR]pbs-d2d-agent.exe\" type=own start=auto DisplayName=\"PBS Agent\"",
       "when": "install"
     },
     {
