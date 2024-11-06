@@ -88,24 +88,12 @@ func handleConnection(conn net.Conn, sftpConfig *SFTPConfig, driveLetter string)
 	}
 }
 
-func handlePingPong(reqs <-chan *ssh.Request) {
-	for req := range reqs {
-		if req.Type == "ping" {
-			log.Println("Received ping request")
-			err := req.Reply(true, []byte("pong"))
-			if err != nil {
-				log.Println("Failed to reply to ping:", err)
-			}
-		} else {
-			log.Printf("Received unknown request type: %s\n", req.Type)
-		}
-	}
-}
-
 func handleRequests(requests <-chan *ssh.Request) {
 	for req := range requests {
 		if req.Type == "subsystem" && string(req.Payload[4:]) == "sftp" {
 			req.Reply(true, nil)
+		} else if req.Type == "ping" {
+			req.Reply(true, []byte("pong"))
 		} else {
 			req.Reply(false, nil)
 		}
