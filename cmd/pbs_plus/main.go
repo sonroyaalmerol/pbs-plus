@@ -98,9 +98,9 @@ func main() {
 
 	storeInstance.APIToken = token
 
-	err = storeInstance.CreateTables()
+	err = storeInstance.DefaultExclusions()
 	if err != nil {
-		s.Errorf("Failed to create store tables: %v", err)
+		s.Errorf("Failed to create default exclusions: %v", err)
 		return
 	}
 
