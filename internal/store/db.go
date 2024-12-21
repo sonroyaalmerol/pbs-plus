@@ -80,12 +80,36 @@ func Initialize() (*Store, error) {
 		return nil, fmt.Errorf("Initialize: error creating config folder -> %w", err)
 	}
 
+	f, err := os.OpenFile(filepath.Join(DbFolder, JobCfgFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("Initialize: error creating cfg file -> %w", err)
+	}
+	f.Close()
+
+	f, err = os.OpenFile(filepath.Join(DbFolder, TargetCfgFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("Initialize: error creating cfg file -> %w", err)
+	}
+	f.Close()
+
+	f, err = os.OpenFile(filepath.Join(DbFolder, ExclusionCfgFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("Initialize: error creating cfg file -> %w", err)
+	}
+	f.Close()
+
+	f, err = os.OpenFile(filepath.Join(DbFolder, PartialFileCfgFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("Initialize: error creating cfg file -> %w", err)
+	}
+	f.Close()
+
 	return &Store{Db: NewCfgDatabase()}, nil
 }
 
 // CreateTables creates the necessary tables in the SQLite database
 func (store *Store) DefaultExclusions() error {
-	file, err := os.Open(filepath.Join(DbFolder, "exclusions.cfg"))
+	file, err := os.Open(filepath.Join(DbFolder, ExclusionCfgFile))
 	if err != nil {
 		for _, path := range defaultExclusions {
 			_ = store.CreateExclusion(Exclusion{
