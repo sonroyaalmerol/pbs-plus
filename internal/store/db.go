@@ -3,8 +3,6 @@
 package store
 
 import (
-	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -21,16 +19,16 @@ import (
 
 // Job represents the pbs-disk-backup-job-status model
 type Job struct {
-	ID               string      `db:"id" json:"id"`
-	Store            string      `db:"store" json:"store"`
-	Target           string      `db:"target" json:"target"`
-	Subpath          string      `db:"subpath" json:"subpath"`
-	Schedule         string      `db:"schedule" json:"schedule"`
-	Comment          string      `db:"comment" json:"comment"`
-	NotificationMode string      `db:"notification_mode" json:"notification-mode"`
-	Namespace        string      `db:"namespace" json:"ns"`
-	NextRun          *int64      `db:"next_run" json:"next-run"`
-	LastRunUpid      *string     `db:"last_run_upid" json:"last-run-upid"`
+	ID               string      `json:"id"`
+	Store            string      `json:"store"`
+	Target           string      `json:"target"`
+	Subpath          string      `json:"subpath"`
+	Schedule         string      `json:"schedule"`
+	Comment          string      `json:"comment"`
+	NotificationMode string      `json:"notification-mode"`
+	Namespace        string      `json:"ns"`
+	NextRun          *int64      `json:"next-run"`
+	LastRunUpid      *string     `json:"last-run-upid"`
 	LastRunState     *string     `json:"last-run-state"`
 	LastRunEndtime   *int64      `json:"last-run-endtime"`
 	Duration         *int64      `json:"duration"`
@@ -38,93 +36,57 @@ type Job struct {
 	RawExclusions    string      `json:"rawexclusions"`
 }
 
+const JobCfgFile = "jobs.cfg"
+
 // Target represents the pbs-model-targets model
 type Target struct {
-	Name             string `db:"name" json:"name"`
-	Path             string `db:"path" json:"path"`
+	Name             string `json:"name"`
+	Path             string `json:"path"`
 	IsAgent          bool   `json:"is_agent"`
 	ConnectionStatus bool   `json:"connection_status"`
 }
 
+const TargetCfgFile = "targets.cfg"
+
 type Exclusion struct {
-	JobID   string `db:"job_id" json:"job_id"`
-	Path    string `db:"path" json:"path"`
-	Comment string `db:"comment" json:"comment"`
+	JobID   string `json:"job_id"`
+	Path    string `json:"path"`
+	Comment string `json:"comment"`
 }
 
+const ExclusionCfgFile = "exclusions.cfg"
+
 type PartialFile struct {
-	Path    string `db:"path" json:"path"`
-	Comment string `db:"comment" json:"comment"`
+	Path    string `json:"path"`
+	Comment string `json:"comment"`
 }
+
+const PartialFileCfgFile = "partial-files.cfg"
 
 // Store holds the database instance
 type Store struct {
-	Db         *sql.DB
+	Db         *CfgDatabase
 	LastToken  *Token
 	APIToken   *APIToken
 	HTTPClient *http.Client
 }
 
+const DbFolder = "/etc/proxmox-backup/plus"
+
 // Initialize initializes the database connection and returns a Store instance
 func Initialize() (*Store, error) {
-	db, err := sql.Open("sqlite3", filepath.Join(DbBasePath, "d2d.db"))
+	err := os.MkdirAll(DbFolder, os.ModeDir)
 	if err != nil {
-		return nil, fmt.Errorf("Initialize: error initializing sqlite database -> %w", err)
+		return nil, fmt.Errorf("Initialize: error creating config folder -> %w", err)
 	}
 
-	return &Store{Db: db}, nil
+	return &Store{Db: NewCfgDatabase()}, nil
 }
 
 // CreateTables creates the necessary tables in the SQLite database
-func (store *Store) CreateTables() error {
-	// Create Job table if it doesn't exist
-	createJobTable := `
-    CREATE TABLE IF NOT EXISTS d2d_jobs (
-        id TEXT PRIMARY KEY NOT NULL,
-        store TEXT NOT NULL,
-        target TEXT NOT NULL,
-				subpath TEXT,
-        schedule TEXT,
-        comment TEXT,
-        next_run INTEGER,
-        last_run_upid TEXT,
-				namespace TEXT,
-				notification_mode TEXT
-    );`
-
-	_, err := store.Db.Exec(createJobTable)
+func (store *Store) DefaultExclusions() error {
+	file, err := os.Open(filepath.Join(DbFolder, "exclusions.cfg"))
 	if err != nil {
-		return fmt.Errorf("CreateTables: error creating job table -> %w", err)
-	}
-
-	// Create Target table if it doesn't exist
-	createTargetTable := `
-    CREATE TABLE IF NOT EXISTS targets (
-        name TEXT PRIMARY KEY NOT NULL,
-        path TEXT NOT NULL
-    );`
-
-	_, err = store.Db.Exec(createTargetTable)
-	if err != nil {
-		return fmt.Errorf("CreateTables: error creating target table -> %w", err)
-	}
-
-	_, exclusionCheck := store.Db.Query("SELECT * FROM exclusions;")
-
-	createExclusionTable := `
-    CREATE TABLE IF NOT EXISTS exclusions (
-        path TEXT NOT NULL,
-        job_id TEXT,
-				comment TEXT,
-				PRIMARY KEY (path, job_id)
-    );`
-
-	_, err = store.Db.Exec(createExclusionTable)
-	if err != nil {
-		return fmt.Errorf("CreateTables: error creating exclusions table -> %w", err)
-	}
-
-	if exclusionCheck != nil {
 		for _, path := range defaultExclusions {
 			_ = store.CreateExclusion(Exclusion{
 				Path:    path,
@@ -132,17 +94,7 @@ func (store *Store) CreateTables() error {
 			})
 		}
 	}
-
-	createPartialFileTable := `
-    CREATE TABLE IF NOT EXISTS partial_files (
-        path TEXT PRIMARY KEY NOT NULL,
-				comment TEXT
-    );`
-
-	_, err = store.Db.Exec(createPartialFileTable)
-	if err != nil {
-		return fmt.Errorf("CreateTables: error creating partial_files table -> %w", err)
-	}
+	file.Close()
 
 	return nil
 }
@@ -159,11 +111,29 @@ func (store *Store) CreateJob(job Job) error {
 		return fmt.Errorf("CreateJob: invalid subpath string -> %s", job.Subpath)
 	}
 
-	query := `INSERT INTO d2d_jobs (id, store, target, subpath, schedule, comment, next_run, last_run_upid, notification_mode, namespace) 
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
-	_, err := store.Db.Exec(query, job.ID, job.Store, job.Target, job.Subpath, job.Schedule, job.Comment, job.NextRun, job.LastRunUpid, job.NotificationMode, job.Namespace)
+	jobsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, JobCfgFile))
 	if err != nil {
-		return fmt.Errorf("CreateJob: error inserting data to job table -> %w", err)
+		return fmt.Errorf("CreateJob: error reading cfg -> %w", err)
+	}
+
+	if _, ok := jobsMap[job.ID]; ok {
+		return fmt.Errorf("CreateJob: %s already exists!", job.ID)
+	}
+
+	err = store.Db.WriteObject(filepath.Join(DbFolder, JobCfgFile), map[string]string{
+		"id":                job.ID,
+		"object":            "job",
+		"store":             job.Store,
+		"target":            job.Target,
+		"subpath":           job.Subpath,
+		"schedule":          job.Schedule,
+		"comment":           job.Comment,
+		"last-run-upid":     *job.LastRunUpid,
+		"notification-mode": job.NotificationMode,
+		"namespace":         job.Namespace,
+	})
+	if err != nil {
+		return fmt.Errorf("CreateJob: error inserting data to cfg -> %w", err)
 	}
 
 	if len(job.Exclusions) > 0 {
@@ -185,16 +155,24 @@ func (store *Store) CreateJob(job Job) error {
 
 // GetJob retrieves a Job by ID
 func (store *Store) GetJob(id string) (*Job, error) {
-	query := `SELECT id, store, target, subpath, schedule, comment, next_run, last_run_upid, notification_mode, namespace FROM d2d_jobs WHERE id = ?;`
-	row := store.Db.QueryRow(query, id)
-
-	var job Job
-	err := row.Scan(&job.ID, &job.Store, &job.Target, &job.Subpath, &job.Schedule, &job.Comment, &job.NextRun, &job.LastRunUpid, &job.NotificationMode, &job.Namespace)
+	jobsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, JobCfgFile))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
 		return nil, fmt.Errorf("GetJob: error scanning job row -> %w", err)
+	}
+
+	jobMap := jobsMap[id]
+
+	lastUpid := jobMap["last-run-upid"]
+	job := Job{
+		ID:               jobMap["id"],
+		Store:            jobMap["store"],
+		Target:           jobMap["target"],
+		Subpath:          jobMap["subpath"],
+		Schedule:         jobMap["schedule"],
+		Comment:          jobMap["comment"],
+		LastRunUpid:      &lastUpid,
+		NotificationMode: jobMap["notification-mode"],
+		Namespace:        jobMap["namespace"],
 	}
 
 	exclusions, err := store.GetAllJobExclusions(id)
@@ -258,16 +236,43 @@ func (store *Store) UpdateJob(job Job) error {
 		return fmt.Errorf("UpdateJob: invalid subpath string -> %s", job.Subpath)
 	}
 
-	query := `UPDATE d2d_jobs SET store = ?, target = ?, subpath = ?, schedule = ?, comment = ?, next_run = ?, last_run_upid = ?, notification_mode = ?, namespace = ? WHERE id = ?;`
-	_, err := store.Db.Exec(query, job.Store, job.Target, job.Subpath, job.Schedule, job.Comment, job.NextRun, job.LastRunUpid, job.NotificationMode, job.Namespace, job.ID)
+	jobsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, JobCfgFile))
 	if err != nil {
-		return fmt.Errorf("UpdateJob: error updating job table -> %w", err)
+		return fmt.Errorf("UpdateJob: error reading cfg -> %w", err)
 	}
 
-	query = `DELETE FROM exclusions WHERE job_id = ?;`
-	_, err = store.Db.Exec(query, job.ID)
+	jobsMap[job.ID] = map[string]string{
+		"id":                job.ID,
+		"object":            "job",
+		"store":             job.Store,
+		"target":            job.Target,
+		"subpath":           job.Subpath,
+		"schedule":          job.Schedule,
+		"comment":           job.Comment,
+		"last-run-upid":     *job.LastRunUpid,
+		"notification-mode": job.NotificationMode,
+		"namespace":         job.Namespace,
+	}
+
+	err = store.Db.WriteAllObjects(filepath.Join(DbFolder, JobCfgFile), jobsMap)
 	if err != nil {
-		return fmt.Errorf("UpdateJob: error deleting exclusions from table -> %w", err)
+		return fmt.Errorf("UpdateJob: error updating cfg -> %w", err)
+	}
+
+	exclusionsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, ExclusionCfgFile))
+	if err != nil {
+		return fmt.Errorf("UpdateJob: error reading exclusions from cfg -> %w", err)
+	}
+
+	for k, exclusionMap := range exclusionsMap {
+		if exclusionMap["job-id"] == job.ID {
+			delete(exclusionsMap, k)
+		}
+	}
+
+	err = store.Db.WriteAllObjects(filepath.Join(DbFolder, ExclusionCfgFile), exclusionsMap)
+	if err != nil {
+		return fmt.Errorf("UpdateJob: error deleting exclusions from cfg -> %w", err)
 	}
 
 	if len(job.Exclusions) > 0 {
@@ -340,11 +345,18 @@ func (store *Store) SetSchedule(job Job) error {
 
 // DeleteJob deletes a Job from the database
 func (store *Store) DeleteJob(id string) error {
-	query := `DELETE FROM d2d_jobs WHERE id = ?;`
-	_, err := store.Db.Exec(query, id)
+	jobsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, JobCfgFile))
 	if err != nil {
-		return fmt.Errorf("DeleteJob: error deleting job from table -> %w", err)
+		return fmt.Errorf("DeleteJob: error reading cfg -> %w", err)
 	}
+
+	delete(jobsMap, id)
+
+	err = store.Db.WriteAllObjects(filepath.Join(DbFolder, JobCfgFile), jobsMap)
+	if err != nil {
+		return fmt.Errorf("DeleteJob: error deleting job from cfg -> %w", err)
+	}
+
 	deleteSchedule(id)
 
 	return nil
@@ -352,20 +364,25 @@ func (store *Store) DeleteJob(id string) error {
 
 // GetAllJobs retrieves all Job records from the database
 func (store *Store) GetAllJobs() ([]Job, error) {
-	query := `SELECT id, store, target, subpath, schedule, comment, next_run, last_run_upid, notification_mode, namespace FROM d2d_jobs WHERE id IS NOT NULL;`
-	rows, err := store.Db.Query(query)
+	jobsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, JobCfgFile))
 	if err != nil {
-		return nil, fmt.Errorf("GetAllJobs: error getting job select query -> %w", err)
+		return nil, fmt.Errorf("GetAllJobs: error reading cfg -> %w", err)
 	}
-	defer rows.Close()
 
 	var jobs []Job
-	jobs = make([]Job, 0)
-	for rows.Next() {
-		var job Job
-		err := rows.Scan(&job.ID, &job.Store, &job.Target, &job.Subpath, &job.Schedule, &job.Comment, &job.NextRun, &job.LastRunUpid, &job.NotificationMode, &job.Namespace)
-		if err != nil {
-			return nil, fmt.Errorf("GetAllJobs: error scanning job row -> %w", err)
+
+	for _, jobMap := range jobsMap {
+		lastUpid := jobMap["last-run-upid"]
+		job := Job{
+			ID:               jobMap["id"],
+			Store:            jobMap["store"],
+			Target:           jobMap["target"],
+			Subpath:          jobMap["subpath"],
+			Schedule:         jobMap["schedule"],
+			Comment:          jobMap["comment"],
+			LastRunUpid:      &lastUpid,
+			NotificationMode: jobMap["notification-mode"],
+			Namespace:        jobMap["namespace"],
 		}
 
 		exclusions, err := store.GetAllJobExclusions(job.ID)
@@ -382,7 +399,7 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 		if job.LastRunUpid != nil && *job.LastRunUpid != "" {
 			task, err := store.GetTaskByUPID(*job.LastRunUpid)
 			if err != nil {
-				log.Printf("GetJob: error getting task by UPID -> %v\n", err)
+				log.Printf("GetAllJobs: error getting task by UPID -> %v\n", err)
 			} else {
 				job.LastRunEndtime = &task.EndTime
 
@@ -411,43 +428,56 @@ func (store *Store) GetAllJobs() ([]Job, error) {
 		jobs = append(jobs, job)
 	}
 
-	return jobs, rows.Err()
+	return jobs, nil
 }
 
 func (store *Store) GetAllJobExclusions(jobId string) ([]Exclusion, error) {
-	query := `SELECT path, comment, job_id FROM exclusions WHERE job_id = ?;`
-	rows, err := store.Db.Query(query, jobId)
+	exclusionsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, ExclusionCfgFile))
 	if err != nil {
-		return nil, fmt.Errorf("GetAllJobExclusions: error getting job exclusions select query -> %w", err)
+		return nil, fmt.Errorf("GetAllJobExclusions: error reading cfg -> %w", err)
 	}
-	defer rows.Close()
 
 	var exclusions []Exclusion
-	exclusions = make([]Exclusion, 0)
-	for rows.Next() {
-		var exclusion Exclusion
-		err := rows.Scan(&exclusion.Path, &exclusion.Comment, &exclusion.JobID)
-		if err != nil {
-			return nil, fmt.Errorf("GetAllJobExclusions: error scanning job row -> %w", err)
-		}
+	for _, exclusionMap := range exclusionsMap {
+		if excJobId, ok := exclusionMap["job-id"]; ok && excJobId == jobId {
+			exclusion := Exclusion{
+				Path:    exclusionMap["path"],
+				Comment: exclusionMap["comment"],
+				JobID:   exclusionMap["job-id"],
+			}
 
-		exclusions = append(exclusions, exclusion)
+			exclusions = append(exclusions, exclusion)
+		}
 	}
 
-	return exclusions, rows.Err()
+	return exclusions, nil
 }
 
 // Target CRUD
 
 // CreateTarget inserts a new Target into the database
 func (store *Store) CreateTarget(target Target) error {
-	query := `INSERT INTO targets (name, path) VALUES (?, ?);`
-	_, err := store.Db.Exec(query, target.Name, target.Path)
+	targetsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, TargetCfgFile))
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return store.UpdateTarget(target)
-		}
-		return fmt.Errorf("CreateTarget: error inserting value to targets table -> %w", err)
+		return fmt.Errorf("CreateTarget: error reading cfg -> %w", err)
+	}
+
+	if _, ok := targetsMap[target.Name]; ok {
+		return store.UpdateTarget(target)
+	}
+
+	if _, ok := targetsMap[target.Path]; ok {
+		return fmt.Errorf("CreateTarget: %s already exists!", target.Path)
+	}
+
+	err = store.Db.WriteObject(filepath.Join(DbFolder, TargetCfgFile), map[string]string{
+		"object": "target",
+		"id":     target.Name,
+		"name":   target.Name,
+		"path":   target.Path,
+	})
+	if err != nil {
+		return fmt.Errorf("CreateTarget: error writing to target cfg -> %w", err)
 	}
 
 	return nil
@@ -455,16 +485,19 @@ func (store *Store) CreateTarget(target Target) error {
 
 // GetTarget retrieves a Target by ID
 func (store *Store) GetTarget(name string) (*Target, error) {
-	query := `SELECT name, path FROM targets WHERE name = ?;`
-	row := store.Db.QueryRow(query, name)
+	targetsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, TargetCfgFile))
+	if err != nil {
+		return nil, fmt.Errorf("GetTarget: error reading cfg -> %w", err)
+	}
 
 	var target Target
-	err := row.Scan(&target.Name, &target.Path)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+	if targetMap, ok := targetsMap[name]; ok {
+		target = Target{
+			Name: targetMap["name"],
+			Path: targetMap["path"],
 		}
-		return nil, fmt.Errorf("GetTarget: error scanning row from targets table -> %w", err)
+	} else {
+		return nil, fmt.Errorf("GetTarget: error getting target from cfg -> %w", err)
 	}
 
 	syslogger, err := syslog.InitializeLogger()
@@ -487,20 +520,21 @@ func (store *Store) GetTarget(name string) (*Target, error) {
 }
 
 func (store *Store) GetAllTargetsByIP(ip string) ([]Target, error) {
-	query := `SELECT name, path FROM targets WHERE path LIKE ?;`
-	rows, err := store.Db.Query(query, fmt.Sprintf("agent://%s/%%", ip))
+	query := fmt.Sprintf("agent://%s/", ip)
+	targetsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, TargetCfgFile))
 	if err != nil {
-		return nil, fmt.Errorf("GetAllTargetsByIP: error getting select query -> %w", err)
+		return nil, fmt.Errorf("GetAllTargetsByIP: error reading cfg -> %w", err)
 	}
-	defer rows.Close()
 
 	var targets []Target
-	targets = make([]Target, 0)
-	for rows.Next() {
-		var target Target
-		err := rows.Scan(&target.Name, &target.Path)
-		if err != nil {
-			return nil, fmt.Errorf("GetAllTargetsByIP: error scanning row from targets -> %w", err)
+	for _, targetMap := range targetsMap {
+		if !strings.HasPrefix(targetMap["path"], query) {
+			continue
+		}
+
+		target := Target{
+			Name: targetMap["name"],
+			Path: targetMap["path"],
 		}
 
 		syslogger, err := syslog.InitializeLogger()
@@ -521,45 +555,58 @@ func (store *Store) GetAllTargetsByIP(ip string) ([]Target, error) {
 		targets = append(targets, target)
 	}
 
-	return targets, rows.Err()
+	return targets, nil
 }
 
 // UpdateTarget updates an existing Target in the database
 func (store *Store) UpdateTarget(target Target) error {
-	query := `UPDATE targets SET path = ? WHERE name = ?;`
-	_, err := store.Db.Exec(query, target.Path, target.Name)
+	targetsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, TargetCfgFile))
 	if err != nil {
-		return fmt.Errorf("UpdateTarget: error updating targets table -> %w", err)
+		return fmt.Errorf("UpdateTarget: error getting job exclusions select query -> %w", err)
 	}
+
+	targetsMap[target.Name] = map[string]string{
+		"id":     target.Name,
+		"object": "target",
+		"path":   target.Path,
+		"name":   target.Name,
+	}
+
+	err = store.Db.WriteAllObjects(filepath.Join(DbFolder, TargetCfgFile), targetsMap)
+	if err != nil {
+		return fmt.Errorf("UpdateTarget: error updating job table -> %w", err)
+	}
+
 	return nil
 }
 
 // DeleteTarget deletes a Target from the database
 func (store *Store) DeleteTarget(name string) error {
-	query := `DELETE FROM targets WHERE name = ?;`
-	_, err := store.Db.Exec(query, name)
+	targetsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, TargetCfgFile))
 	if err != nil {
-		return fmt.Errorf("DeleteTarget: error deleting target -> %w", err)
+		return fmt.Errorf("DeleteTarget: error getting job exclusions select query -> %w", err)
+	}
+
+	delete(targetsMap, name)
+
+	err = store.Db.WriteAllObjects(filepath.Join(DbFolder, TargetCfgFile), targetsMap)
+	if err != nil {
+		return fmt.Errorf("DeleteTarget: error updating job table -> %w", err)
 	}
 
 	return nil
 }
 
 func (store *Store) GetAllTargets() ([]Target, error) {
-	query := `SELECT name, path FROM targets WHERE name IS NOT NULL;`
-	rows, err := store.Db.Query(query)
+	targetsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, TargetCfgFile))
 	if err != nil {
-		return nil, fmt.Errorf("GetAllTargets: error getting select query -> %w", err)
+		return nil, fmt.Errorf("GetAllTargets: error getting job exclusions select query -> %w", err)
 	}
-	defer rows.Close()
-
 	var targets []Target
-	targets = make([]Target, 0)
-	for rows.Next() {
-		var target Target
-		err := rows.Scan(&target.Name, &target.Path)
-		if err != nil {
-			return nil, fmt.Errorf("GetAllTargets: error scanning row from targets -> %w", err)
+	for _, targetMap := range targetsMap {
+		target := Target{
+			Name: targetMap["name"],
+			Path: targetMap["path"],
 		}
 
 		syslogger, err := syslog.InitializeLogger()
@@ -580,12 +627,18 @@ func (store *Store) GetAllTargets() ([]Target, error) {
 		targets = append(targets, target)
 	}
 
-	return targets, rows.Err()
+	return targets, nil
 }
 
 func (store *Store) CreateExclusion(exclusion Exclusion) error {
-	query := `INSERT INTO exclusions (path, comment, job_id) 
-              VALUES (?, ?, ?);`
+	exclusionsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, ExclusionCfgFile))
+	if err != nil {
+		return fmt.Errorf("CreateExclusion: error getting job exclusions select query -> %w", err)
+	}
+
+	if _, ok := exclusionsMap[exclusion.Path]; ok {
+		return nil
+	}
 
 	exclusion.Path = strings.ReplaceAll(exclusion.Path, "\\", "/")
 
@@ -593,148 +646,202 @@ func (store *Store) CreateExclusion(exclusion Exclusion) error {
 		return fmt.Errorf("CreateExclusion: invalid path pattern -> %s", exclusion.Path)
 	}
 
-	_, err := store.Db.Exec(query, exclusion.Path, exclusion.Comment, exclusion.JobID)
+	err = store.Db.WriteObject(filepath.Join(DbFolder, ExclusionCfgFile), map[string]string{
+		"object":  "exclusion",
+		"id":      exclusion.Path,
+		"path":    exclusion.Path,
+		"comment": exclusion.Comment,
+		"job-id":  exclusion.JobID,
+	})
 	if err != nil {
-		return fmt.Errorf("CreateExclusion: error inserting data to table -> %w", err)
+		return fmt.Errorf("CreateExclusion: error inserting data to job cfg -> %w", err)
 	}
 
 	return nil
 }
 
 func (store *Store) GetExclusion(path string) (*Exclusion, error) {
-	query := `SELECT path, job_id, comment FROM exclusions WHERE path = ?;`
-	row := store.Db.QueryRow(query, path)
-
-	var exclusion Exclusion
-	err := row.Scan(&exclusion.Path, &exclusion.JobID, &exclusion.Comment)
+	exclusionsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, ExclusionCfgFile))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("GetExclusion: error scanning row from exclusions table -> %w", err)
+		return nil, fmt.Errorf("GetExclusion: error getting job exclusions select query -> %w", err)
 	}
 
-	return &exclusion, nil
+	if exclusionMap, ok := exclusionsMap[path]; ok {
+		exclusion := Exclusion{
+			Path:    exclusionMap["path"],
+			Comment: exclusionMap["comment"],
+			JobID:   exclusionMap["job-id"],
+		}
+
+		return &exclusion, nil
+	}
+
+	return nil, fmt.Errorf("GetExclusion: error scanning row from targets table -> %w", err)
 }
 
 // UpdateExclusion updates an existing Exclusion in the database
 func (store *Store) UpdateExclusion(exclusion Exclusion) error {
-	query := `UPDATE exclusions SET comment = ? WHERE path = ? AND job_id = ?;`
-
 	exclusion.Path = strings.ReplaceAll(exclusion.Path, "\\", "/")
 
 	if !utils.IsValidPattern(exclusion.Path) {
 		return fmt.Errorf("UpdateExclusion: invalid path pattern -> %s", exclusion.Path)
 	}
 
-	_, err := store.Db.Exec(query, exclusion.Comment, exclusion.Path, exclusion.JobID)
+	exclusionsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, ExclusionCfgFile))
 	if err != nil {
-		return fmt.Errorf("UpdateExclusion: error updating exclusions table -> %w", err)
+		return fmt.Errorf("UpdateExclusion: error updating job table -> %w", err)
 	}
+
+	exclusionsMap[exclusion.Path] = map[string]string{
+		"id":      exclusion.Path,
+		"object":  "exclusion",
+		"path":    exclusion.Path,
+		"comment": exclusion.Comment,
+		"job-id":  exclusion.JobID,
+	}
+
+	err = store.Db.WriteAllObjects(filepath.Join(DbFolder, JobCfgFile), exclusionsMap)
+	if err != nil {
+		return fmt.Errorf("UpdateExclusion: error updating job table -> %w", err)
+	}
+
 	return nil
 }
 
 // DeleteExclusion deletes a Exclusion from the database
 func (store *Store) DeleteExclusion(path string) error {
-	query := `DELETE FROM exclusions WHERE path = ? AND (job_id IS NULL OR job_id = '');`
-	_, err := store.Db.Exec(query, path)
+	exclusionsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, ExclusionCfgFile))
 	if err != nil {
-		return fmt.Errorf("DeleteExclusion: error deleting exclusion -> %w", err)
+		return fmt.Errorf("DeleteExclusion: error updating job table -> %w", err)
+	}
+
+	delete(exclusionsMap, path)
+
+	err = store.Db.WriteAllObjects(filepath.Join(DbFolder, JobCfgFile), exclusionsMap)
+	if err != nil {
+		return fmt.Errorf("DeleteExclusion: error updating job table -> %w", err)
 	}
 
 	return nil
 }
 
 func (store *Store) GetAllGlobalExclusions() ([]Exclusion, error) {
-	query := `SELECT path, job_id, comment FROM exclusions WHERE path IS NOT NULL AND (job_id IS NULL OR job_id = '');`
-	rows, err := store.Db.Query(query)
+	exclusionsMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, ExclusionCfgFile))
 	if err != nil {
-		return nil, fmt.Errorf("GetAllExclusions: error getting select query -> %w", err)
+		return nil, fmt.Errorf("GetAllGlobalExclusions: error updating job table -> %w", err)
 	}
-	defer rows.Close()
 
 	var exclusions []Exclusion
-	exclusions = make([]Exclusion, 0)
-	for rows.Next() {
-		var exclusion Exclusion
-		err := rows.Scan(&exclusion.Path, &exclusion.JobID, &exclusion.Comment)
-		if err != nil {
-			return nil, fmt.Errorf("GetAllExclusions: error scanning row from exclusions -> %w", err)
+	for _, exclusionMap := range exclusionsMap {
+		if exclusionMap["job-id"] != "" {
+			continue
+		}
+		exclusion := Exclusion{
+			Path:    exclusionMap["path"],
+			JobID:   exclusionMap["job-id"],
+			Comment: exclusionMap["comment"],
 		}
 
 		exclusions = append(exclusions, exclusion)
 	}
 
-	return exclusions, rows.Err()
+	return exclusions, nil
 }
 
 func (store *Store) CreatePartialFile(partialFile PartialFile) error {
-	query := `INSERT INTO partial_files (path, comment) 
-              VALUES (?, ?);`
-
-	_, err := store.Db.Exec(query, partialFile.Path, partialFile.Comment)
+	partialFilesMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, PartialFileCfgFile))
 	if err != nil {
-		return fmt.Errorf("CreatePartialFile: error inserting data to table -> %w", err)
+		return fmt.Errorf("CreatePartialFile: error getting job exclusions select query -> %w", err)
+	}
+
+	partialFile.Path = strings.ReplaceAll(partialFile.Path, "\\", "/")
+
+	if _, ok := partialFilesMap[partialFile.Path]; ok {
+		return fmt.Errorf("CreatePartialFile: %s already exists!", partialFile.Path)
+	}
+
+	err = store.Db.WriteObject(filepath.Join(DbFolder, PartialFileCfgFile), map[string]string{
+		"object":  "partial-file",
+		"id":      partialFile.Path,
+		"path":    partialFile.Path,
+		"comment": partialFile.Comment,
+	})
+	if err != nil {
+		return fmt.Errorf("CreatePartialFile: error inserting data to job cfg -> %w", err)
 	}
 
 	return nil
 }
 func (store *Store) GetPartialFile(path string) (*PartialFile, error) {
-	query := `SELECT path, comment FROM partial_files WHERE path = ?;`
-	row := store.Db.QueryRow(query, path)
-
-	var partialFile PartialFile
-	err := row.Scan(&partialFile.Path, &partialFile.Comment)
+	partialFilesMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, PartialFileCfgFile))
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("GetPartialFile: error scanning row from partialFiles table -> %w", err)
+		return nil, fmt.Errorf("GetPartialFile: error getting job exclusions select query -> %w", err)
 	}
 
-	return &partialFile, nil
+	if partialFileMap, ok := partialFilesMap[path]; ok {
+		partialFile := PartialFile{
+			Path:    partialFileMap["path"],
+			Comment: partialFileMap["comment"],
+		}
+		return &partialFile, nil
+	}
+	return nil, fmt.Errorf("GetPartialFile: error scanning row from targets table -> %w", err)
 }
 
 // UpdatePartialFile updates an existing PartialFile in the database
 func (store *Store) UpdatePartialFile(partialFile PartialFile) error {
-	query := `UPDATE partial_files SET comment = ? WHERE path = ?;`
-	_, err := store.Db.Exec(query, partialFile.Comment, partialFile.Path)
+	partialFilesMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, PartialFileCfgFile))
 	if err != nil {
-		return fmt.Errorf("UpdatePartialFile: error updating partialFiles table -> %w", err)
+		return fmt.Errorf("UpdatePartialFile: error updating job table -> %w", err)
 	}
+
+	partialFilesMap[partialFile.Path] = map[string]string{
+		"id":      partialFile.Path,
+		"object":  "partial-file",
+		"path":    partialFile.Path,
+		"comment": partialFile.Comment,
+	}
+
+	err = store.Db.WriteAllObjects(filepath.Join(DbFolder, JobCfgFile), partialFilesMap)
+	if err != nil {
+		return fmt.Errorf("UpdatePartialFile: error updating job table -> %w", err)
+	}
+
 	return nil
 }
 
 // DeletePartialFile deletes a PartialFile from the database
 func (store *Store) DeletePartialFile(path string) error {
-	query := `DELETE FROM partial_files WHERE path = ?;`
-	_, err := store.Db.Exec(query, path)
+	partialFilesMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, PartialFileCfgFile))
 	if err != nil {
-		return fmt.Errorf("DeletePartialFile: error deleting partialFile -> %w", err)
+		return fmt.Errorf("DeletePartialFile: error updating job table -> %w", err)
+	}
+
+	delete(partialFilesMap, path)
+
+	err = store.Db.WriteAllObjects(filepath.Join(DbFolder, JobCfgFile), partialFilesMap)
+	if err != nil {
+		return fmt.Errorf("DeletePartialFile: error updating job table -> %w", err)
 	}
 
 	return nil
 }
 
 func (store *Store) GetAllPartialFiles() ([]PartialFile, error) {
-	query := `SELECT path, comment FROM partial_files WHERE path IS NOT NULL;`
-	rows, err := store.Db.Query(query)
+	partialFilesMap, err := store.Db.ReadCfgFile(filepath.Join(DbFolder, PartialFileCfgFile))
 	if err != nil {
-		return nil, fmt.Errorf("GetAllPartialFiles: error getting select query -> %w", err)
+		return nil, fmt.Errorf("GetAllPartialFiles: error updating job table -> %w", err)
 	}
-	defer rows.Close()
 
 	var partialFiles []PartialFile
-	partialFiles = make([]PartialFile, 0)
-	for rows.Next() {
-		var partialFile PartialFile
-		err := rows.Scan(&partialFile.Path, &partialFile.Comment)
-		if err != nil {
-			return nil, fmt.Errorf("GetAllPartialFiles: error scanning row from partialFiles -> %w", err)
+	for _, partialFileMap := range partialFilesMap {
+		partialFile := PartialFile{
+			Path:    partialFileMap["path"],
+			Comment: partialFileMap["comment"],
 		}
 
 		partialFiles = append(partialFiles, partialFile)
 	}
 
-	return partialFiles, rows.Err()
+	return partialFiles, nil
 }
