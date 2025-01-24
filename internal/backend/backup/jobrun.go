@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +72,8 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 		}
 		srcPath = agentMount.Path
 	}
+
+	srcPath = filepath.Join(srcPath, job.Subpath)
 
 	cmd, err := prepareBackupCommand(job, storeInstance, srcPath, isAgent)
 	if err != nil {
