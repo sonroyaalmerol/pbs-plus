@@ -3,6 +3,7 @@
 package mount
 
 import (
+	"context"
 	"encoding/base32"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sonroyaalmerol/pbs-plus/internal/store"
@@ -24,9 +26,11 @@ type AgentMount struct {
 	Drive    string
 	Path     string
 	Cmd      *exec.Cmd
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
-func Mount(storeInstance *store.Store, target *types.Target) (*AgentMount, error) {
+func Mount(ctx context.Context, storeInstance *store.Store, target *types.Target) (*AgentMount, error) {
 	// Parse target information
 	splittedTargetName := strings.Split(target.Name, " - ")
 	targetHostname := splittedTargetName[0]
@@ -50,9 +54,12 @@ func Mount(storeInstance *store.Store, target *types.Target) (*AgentMount, error
 		return nil, fmt.Errorf("Mount: Failed to send mount request to target '%s' -> %w", target.Name, err)
 	}
 
+	mountCtx, cancel := context.WithCancel(ctx)
 	agentMount := &AgentMount{
 		Hostname: targetHostname,
 		Drive:    agentDrive,
+		ctx:      mountCtx,
+		cancel:   cancel,
 	}
 
 	// Get port for NFS connection
@@ -73,63 +80,81 @@ func Mount(storeInstance *store.Store, target *types.Target) (*AgentMount, error
 		return nil, fmt.Errorf("Mount: error creating directory \"%s\" -> %w", agentMount.Path, err)
 	}
 
-	// Mount using NFS
+	// Create pipe for synchronization
+	r, w, err := os.Pipe()
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("Mount: failed to create pipe: %w", err)
+	}
+	defer r.Close()
+	defer w.Close()
+
 	mountArgs := []string{
-		"-t", "nfs",
-		"-o", fmt.Sprintf("port=%s,mountport=%s,vers=3,ro,tcp,noacl,lookupcache=none,noac", agentPort, agentPort),
-		fmt.Sprintf("%s:/", agentHost),
-		agentMount.Path,
+		"-m", "--propagation", "private",
+		"sh", "-c",
+		fmt.Sprintf("mount -t nfs -o port=%s,mountport=%s,vers=3,ro,tcp,noacl,lookupcache=none,noac %s:/ %s && echo ready > /dev/fd/3 && while true; do sleep 86400; done",
+			agentPort, agentPort, agentHost, agentMount.Path),
 	}
 
-	// Mount the NFS share
-	mnt := exec.Command("mount", mountArgs...)
+	mnt := exec.CommandContext(mountCtx, "unshare", mountArgs...)
 	mnt.Env = os.Environ()
 	mnt.Stdout = os.Stdout
 	mnt.Stderr = os.Stderr
-	agentMount.Cmd = mnt
-
-	// Try mounting with retries
-	const maxRetries = 3
-	const retryDelay = 2 * time.Second
-
-	var lastErr error
-	for i := 0; i < maxRetries; i++ {
-		err = mnt.Run()
-		if err == nil {
-			return agentMount, nil
-		}
-		lastErr = err
-		if i < maxRetries-1 {
-			time.Sleep(retryDelay)
-		}
+	mnt.ExtraFiles = []*os.File{w}
+	mnt.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWNS,
 	}
 
-	// If all retries failed, clean up and return error
-	agentMount.Unmount()
-	return nil, fmt.Errorf("Mount: error mounting NFS share after %d attempts -> %w", maxRetries, lastErr)
+	agentMount.Cmd = mnt
+
+	// Start the mount process
+	if err := mnt.Start(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("Mount: failed to start mount process: %w", err)
+	}
+
+	// Wait for mount with timeout
+	readyChan := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 5)
+		_, err := r.Read(buf)
+		readyChan <- err
+	}()
+
+	select {
+	case err := <-readyChan:
+		if err != nil {
+			mnt.Process.Kill()
+			return nil, fmt.Errorf("Mount: mount failed: %w", err)
+		}
+	case <-mountCtx.Done():
+		return nil, fmt.Errorf("Mount: context canceled")
+	case <-time.After(10 * time.Second):
+		mnt.Process.Kill()
+		return nil, fmt.Errorf("Mount: timeout waiting for mount")
+	}
+
+	return agentMount, nil
 }
 
 func (a *AgentMount) Unmount() {
-	if a.Path == "" {
+	if a.Path == "" || a.Cmd == nil || a.Cmd.Process == nil {
 		return
 	}
 
-	// First try a clean unmount
-	umount := exec.Command("umount", a.Path)
-	umount.Env = os.Environ()
-	err := umount.Run()
+	unmountCmd := exec.Command("nsenter",
+		"--mount=/proc/"+fmt.Sprintf("%d", a.Cmd.Process.Pid)+"/ns/mnt",
+		"--",
+		"umount", "-f", "-l", a.Path)
+	unmountCmd.Run()
 
-	// If clean unmount fails, try force unmount
-	if err != nil {
-		forceUmount := exec.Command("umount", "-f", a.Path)
-		forceUmount.Env = os.Environ()
-		_ = forceUmount.Run()
+	if a.cancel != nil {
+		a.cancel()
 	}
 
-	// Kill any lingering mount process
-	if a.Cmd != nil && a.Cmd.Process != nil {
-		_ = a.Cmd.Process.Kill()
-	}
+	a.Cmd.Process.Kill()
+	a.Cmd.Wait()
+	os.Remove(a.Path)
 }
 
 func (a *AgentMount) CloseMount() {
