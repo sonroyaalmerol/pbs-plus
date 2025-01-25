@@ -107,7 +107,7 @@ func Mount(storeInstance *store.Store, target *types.Target) (*AgentMount, error
 		"--fork",
 		"--mount-proc",
 		"sh", "-c",
-		fmt.Sprintf("mount -t nfs -o port=%s,mountport=%s,vers=3,ro,tcp,noacl,lookupcache=none,noac %s:/ %s",
+		fmt.Sprintf("mount -t nfs -o port=%s,mountport=%s,vers=3,ro,tcp,noacl %s:/ %s",
 			agentPort, agentPort, agentHost, agentMount.Path),
 	}
 
