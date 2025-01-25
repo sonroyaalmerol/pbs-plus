@@ -67,7 +67,7 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 
 	var agentMount *mount.AgentMount
 	if isAgent {
-		if agentMount, err = mount.Mount(context.Background(), storeInstance, target); err != nil {
+		if agentMount, err = mount.Mount(storeInstance, target); err != nil {
 			return nil, fmt.Errorf("RunBackup: mount initialization error: %w", err)
 		}
 		srcPath = agentMount.Path
@@ -84,7 +84,7 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 	if isAgent {
 		// Set up nsenter to enter the mount namespace
 		nsenterCmd := exec.Command("nsenter",
-			"--mount=/proc/"+fmt.Sprintf("%d", agentMount.Cmd.Process.Pid)+"/ns/mnt",
+			fmt.Sprintf("--mount=%s/mnt", agentMount.NSDir),
 			"--",
 			cmd.Path,
 		)
