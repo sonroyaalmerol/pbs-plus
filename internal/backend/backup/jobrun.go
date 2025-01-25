@@ -5,7 +5,9 @@ package backup
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -17,6 +19,19 @@ import (
 	"github.com/sonroyaalmerol/pbs-plus/internal/store/proxmox"
 	"github.com/sonroyaalmerol/pbs-plus/internal/store/types"
 )
+
+func cleanupResources(stdout, stderr io.ReadCloser, agentMount *mount.AgentMount) {
+	if stdout != nil {
+		stdout.Close()
+	}
+	if stderr != nil {
+		stderr.Close()
+	}
+	if agentMount != nil {
+		agentMount.Unmount()
+		agentMount.CloseMount()
+	}
+}
 
 func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*proxmox.Task, error) {
 	backupMutex, err := filemutex.New("/tmp/pbs-plus-mutex-lock")
@@ -60,20 +75,37 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 
 	srcPath = filepath.Join(srcPath, job.Subpath)
 
-	// Prepare backup command
 	cmd, err := prepareBackupCommand(job, storeInstance, srcPath, isAgent)
 	if err != nil {
+		cleanupResources(nil, nil, agentMount)
 		return nil, err
+	}
+
+	if isAgent {
+		// Set up nsenter to enter the mount namespace
+		nsenterCmd := exec.Command("nsenter",
+			fmt.Sprintf("--mount=%s/mnt", agentMount.NSDir),
+			"--",
+			cmd.Path,
+		)
+		nsenterCmd.Args = append(nsenterCmd.Args, cmd.Args[1:]...)
+		nsenterCmd.Env = cmd.Env
+		nsenterCmd.Stdout = cmd.Stdout
+		nsenterCmd.Stderr = cmd.Stderr
+
+		// Replace original command with nsenter wrapped version
+		cmd = nsenterCmd
 	}
 
 	// Setup command pipes
 	stdout, stderr, err := setupCommandPipes(cmd)
 	if err != nil {
+		cleanupResources(nil, nil, agentMount)
 		return nil, err
 	}
 
 	// Start monitoring in background first
-	monitorCtx, monitorCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	monitorCtx, monitorCancel := context.WithTimeout(context.Background(), time.Minute)
 
 	var task *proxmox.Task
 	var monitorErr error
@@ -87,8 +119,7 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 	select {
 	case <-readyChan:
 	case <-monitorCtx.Done():
-		stderr.Close()
-		stdout.Close()
+		cleanupResources(stdout, stderr, agentMount)
 
 		return nil, fmt.Errorf("RunBackup: task monitoring crashed -> %w", monitorErr)
 	}
@@ -110,13 +141,11 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 	// Now start the backup process
 	if err := cmd.Start(); err != nil {
 		monitorCancel() // Cancel monitoring since backup failed to start
+		cleanupResources(stdout, stderr, agentMount)
 
 		if currOwner != "" {
 			_ = SetDatastoreOwner(job, storeInstance, currOwner)
 		}
-
-		stderr.Close()
-		stdout.Close()
 
 		return nil, fmt.Errorf("RunBackup: proxmox-backup-client start error (%s): %w", cmd.String(), err)
 	}
@@ -125,8 +154,7 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 	select {
 	case <-monitorCtx.Done():
 		if task == nil {
-			stderr.Close()
-			stdout.Close()
+			cleanupResources(stdout, stderr, agentMount)
 
 			if currOwner != "" {
 				_ = SetDatastoreOwner(job, storeInstance, currOwner)
@@ -138,8 +166,8 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 	}
 
 	if err := updateJobStatus(job, task, storeInstance); err != nil {
-		stderr.Close()
-		stdout.Close()
+		cleanupResources(stdout, stderr, agentMount)
+
 		if currOwner != "" {
 			_ = SetDatastoreOwner(job, storeInstance, currOwner)
 		}
@@ -148,8 +176,7 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 	}
 
 	go func() {
-		defer stdout.Close()
-		defer stderr.Close()
+		defer cleanupResources(stdout, stderr, agentMount)
 
 		_ = cmd.Wait()
 
@@ -166,11 +193,6 @@ func RunBackup(job *types.Job, storeInstance *store.Store, skipCheck bool) (*pro
 
 		if currOwner != "" {
 			_ = SetDatastoreOwner(job, storeInstance, currOwner)
-		}
-
-		if agentMount != nil {
-			agentMount.Unmount()
-			agentMount.CloseMount()
 		}
 	}()
 

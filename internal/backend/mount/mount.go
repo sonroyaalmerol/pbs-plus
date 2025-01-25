@@ -24,6 +24,7 @@ type AgentMount struct {
 	Drive    string
 	Path     string
 	Cmd      *exec.Cmd
+	NSDir    string
 }
 
 func Mount(storeInstance *store.Store, target *types.Target) (*AgentMount, error) {
@@ -73,19 +74,51 @@ func Mount(storeInstance *store.Store, target *types.Target) (*AgentMount, error
 		return nil, fmt.Errorf("Mount: error creating directory \"%s\" -> %w", agentMount.Path, err)
 	}
 
-	// Mount using NFS
-	mountArgs := []string{
-		"-t", "nfs",
-		"-o", fmt.Sprintf("port=%s,mountport=%s,vers=3,ro,tcp,noacl", agentPort, agentPort),
-		fmt.Sprintf("%s:/", agentHost),
-		agentMount.Path,
+	// Create namespace directory
+	NSDir := filepath.Join("/tmp/ns", base32.StdEncoding.EncodeToString([]byte(target.Name)))
+	if err := os.MkdirAll(NSDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create ns dir: %w", err)
 	}
 
-	// Mount the NFS share
-	mnt := exec.Command("mount", mountArgs...)
+	// Setup bind mount and make private
+	bindCmd := exec.Command("mount", "--bind", NSDir, NSDir)
+	if err := bindCmd.Run(); err != nil {
+		os.RemoveAll(NSDir)
+		return nil, fmt.Errorf("failed bind mount: %w", err)
+	}
+
+	privateCmd := exec.Command("mount", "--make-private", NSDir)
+	if err := privateCmd.Run(); err != nil {
+		exec.Command("umount", NSDir).Run()
+		os.RemoveAll(NSDir)
+		return nil, fmt.Errorf("failed make private: %w", err)
+	}
+
+	// Create namespace files
+	if err := os.WriteFile(filepath.Join(NSDir, "mnt"), []byte{}, 0600); err != nil {
+		exec.Command("umount", NSDir).Run()
+		os.RemoveAll(NSDir)
+		return nil, fmt.Errorf("failed create ns file: %w", err)
+	}
+
+	// Modify mount args to use persistent namespace
+	mountArgs := []string{
+		fmt.Sprintf("--mount=%s/mnt", NSDir),
+		"--fork",
+		"--mount-proc",
+		"sh", "-c",
+		fmt.Sprintf("mount -t nfs -o port=%s,mountport=%s,vers=3,ro,tcp,noacl %s:/ %s",
+			agentPort, agentPort, agentHost, agentMount.Path),
+	}
+
+	// Store NSDir in struct for cleanup
+	agentMount.NSDir = NSDir
+
+	mnt := exec.Command("unshare", mountArgs...)
 	mnt.Env = os.Environ()
 	mnt.Stdout = os.Stdout
 	mnt.Stderr = os.Stderr
+
 	agentMount.Cmd = mnt
 
 	// Try mounting with retries
@@ -114,22 +147,20 @@ func (a *AgentMount) Unmount() {
 		return
 	}
 
-	// First try a clean unmount
-	umount := exec.Command("umount", a.Path)
-	umount.Env = os.Environ()
-	err := umount.Run()
+	// Use persistent namespace for unmount
+	unmountCmd := exec.Command("nsenter",
+		fmt.Sprintf("--mount=%s/mnt", a.NSDir),
+		"--",
+		"umount", "-f", "-l", a.Path)
+	unmountCmd.Run()
 
-	// If clean unmount fails, try force unmount
-	if err != nil {
-		forceUmount := exec.Command("umount", "-f", a.Path)
-		forceUmount.Env = os.Environ()
-		_ = forceUmount.Run()
-	}
+	// Cleanup namespace
+	exec.Command("umount", a.NSDir).Run()
+	os.RemoveAll(a.NSDir)
 
-	// Kill any lingering mount process
-	if a.Cmd != nil && a.Cmd.Process != nil {
-		_ = a.Cmd.Process.Kill()
-	}
+	a.Cmd.Process.Kill()
+	a.Cmd.Wait()
+	os.Remove(a.Path)
 }
 
 func (a *AgentMount) CloseMount() {
