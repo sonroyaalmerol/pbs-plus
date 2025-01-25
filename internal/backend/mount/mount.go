@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/sonroyaalmerol/pbs-plus/internal/store"
@@ -119,9 +118,6 @@ func Mount(storeInstance *store.Store, target *types.Target) (*AgentMount, error
 	mnt.Env = os.Environ()
 	mnt.Stdout = os.Stdout
 	mnt.Stderr = os.Stderr
-	mnt.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWNS,
-	}
 
 	agentMount.Cmd = mnt
 
