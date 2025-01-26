@@ -48,15 +48,6 @@ func (fs *VSSFS) cacheRootDirectory() {
 	rootID := fs.getFileID(0, 0)
 	fs.pathToID.Store("/", rootID)
 	fs.idToPath.Store(rootID, "/")
-
-	vssInfo := &VSSFileInfo{
-		name:     "\\",
-		size:     0,
-		mode:     os.FileMode(0444) | os.ModeDir,
-		modTime:  time.Now(),
-		stableID: 0,
-	}
-	fs.fileInfoCache.Store("/", vssInfo)
 }
 
 func (fs *VSSFS) validateAndCacheFile(normalizedPath, fullPath string) error {
