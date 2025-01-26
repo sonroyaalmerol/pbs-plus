@@ -79,6 +79,7 @@ func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
 	normalizedPath := fs.normalizePath(filename)
 	if cached, exists := fs.fileInfoCache.Load(normalizedPath); exists {
 		syslog.L.Infof("Stat cache hit for %s", normalizedPath)
+		syslog.L.Infof("Info: %v", cached.(*VSSFileInfo))
 		return cached.(*VSSFileInfo), nil
 	}
 
@@ -132,7 +133,7 @@ func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
 	}
 	defer syscall.FindClose(handle)
 
-	return fs.processDirectoryEntries(handle, findData)
+	return fs.processDirectoryEntries(dirname, handle, findData)
 }
 
 func (fs *VSSFS) Lstat(filename string) (os.FileInfo, error) {

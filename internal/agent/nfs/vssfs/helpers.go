@@ -108,16 +108,17 @@ func (fs *VSSFS) initDirectorySearch(dirname string) (*syscall.Win32finddata, sy
 	return &findData, handle, nil
 }
 
-func (fs *VSSFS) processDirectoryEntries(handle syscall.Handle, findData *syscall.Win32finddata) ([]os.FileInfo, error) {
+func (fs *VSSFS) processDirectoryEntries(dirname string, handle syscall.Handle, findData *syscall.Win32finddata) ([]os.FileInfo, error) {
 	var entries []os.FileInfo
 
 	for {
 		name := syscall.UTF16ToString(findData.FileName[:])
 		if name != "." && name != ".." {
-			fullEntryPath := filepath.Join(fs.root, name)
+			entryPath := filepath.Join(dirname, name)
+			fullEntryPath := filepath.Join(fs.root, entryPath)
 
 			if !fs.shouldSkipEntry(findData, fullEntryPath) {
-				info := fs.createFileInfo(name, findData)
+				info := fs.createFileInfo(entryPath, findData)
 				entries = append(entries, info)
 			}
 		}
@@ -211,6 +212,11 @@ func (fs *VSSFS) normalizePath(path string) string {
 		cleanPath = ""
 	}
 
+	// Handle root directory case
+	if cleanPath == "/" || cleanPath == "\\" {
+		return "/"
+	}
+
 	for _, c := range cleanPath {
 		if c == '\\' {
 			b.WriteByte('/')
@@ -223,8 +229,13 @@ func (fs *VSSFS) normalizePath(path string) string {
 	if !strings.HasPrefix(result, "/") {
 		result = "/" + result
 	}
-	if len(result) > 1 && strings.HasSuffix(result, "/") {
-		result = result[:len(result)-1]
+
+	// Don't remove trailing slash for directories
+	// This prevents the double directory issue
+	if info, err := fs.Filesystem.Stat(path); err == nil && !info.IsDir() {
+		if len(result) > 1 && strings.HasSuffix(result, "/") {
+			result = result[:len(result)-1]
+		}
 	}
 
 	return result
