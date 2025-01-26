@@ -5,6 +5,8 @@ package vssfs
 import (
 	"os"
 	"time"
+
+	"github.com/willscott/go-nfs"
 )
 
 type VSSFileInfo struct {
@@ -18,20 +20,13 @@ type VSSFileInfo struct {
 	attrs    uint32
 }
 
-type VSSFileSys struct {
-	Nlink  uint32
-	UID    uint32
-	GID    uint32
-	Fileid uint64
-}
-
 func (vi *VSSFileInfo) Name() string       { return vi.name }
 func (vi *VSSFileInfo) Size() int64        { return vi.size }
 func (vi *VSSFileInfo) Mode() os.FileMode  { return vi.mode }
 func (vi *VSSFileInfo) ModTime() time.Time { return vi.modTime }
 func (vi *VSSFileInfo) IsDir() bool        { return vi.mode.IsDir() }
 func (vi *VSSFileInfo) Sys() interface{} {
-	return VSSFileSys{
+	return nfs.FileAttribute{
 		Nlink:  1,
 		UID:    1000,
 		GID:    1000,
