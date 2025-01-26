@@ -3,13 +3,11 @@
 package vssfs
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
-	"unicode"
 
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"golang.org/x/sys/windows"
@@ -28,128 +26,10 @@ func (fs *VSSFS) GetExclusions() []string {
 	return fs.excludedPaths.ToStringArray()
 }
 
-func (fs *VSSFS) initVolumeSerial() {
-	h, err := windows.CreateFile(
-		windows.StringToUTF16Ptr(fs.root),
-		windows.GENERIC_READ,
-		windows.FILE_SHARE_READ,
-		nil,
-		windows.OPEN_EXISTING,
-		windows.FILE_FLAG_BACKUP_SEMANTICS,
-		0,
-	)
-	if err == nil {
-		windows.GetVolumeInformationByHandle(h, nil, 0, &fs.volumeSerial, nil, nil, nil, 0)
-		windows.CloseHandle(h)
-	}
-}
-
 func (fs *VSSFS) cacheRootDirectory() {
-	rootID := fs.getFileID(0, 0)
+	rootID := uint64(0)
 	fs.pathToID.Store("/", rootID)
 	fs.idToPath.Store(rootID, "/")
-}
-
-func (fs *VSSFS) validateAndCacheFile(normalizedPath, fullPath string) error {
-	if _, cached := fs.fileInfoCache.Load(normalizedPath); cached {
-		return nil
-	}
-
-	info, err := fs.Filesystem.Stat(normalizedPath)
-	if err != nil {
-		return err
-	}
-
-	sysInfo, ok := info.Sys().(*syscall.Win32FileAttributeData)
-	if !ok {
-		return fmt.Errorf("invalid file information")
-	}
-
-	for _, attr := range InvalidFileAttributes {
-		if sysInfo.FileAttributes&attr != 0 {
-			return os.ErrNotExist
-		}
-	}
-
-	stableID := fs.getFileIDFromPath(normalizedPath)
-	vssInfo := &VSSFileInfo{
-		FileInfo: info,
-		stableID: stableID,
-		fullPath: fullPath,
-		attrs:    sysInfo.FileAttributes,
-	}
-	fs.fileInfoCache.Store(normalizedPath, vssInfo)
-
-	return nil
-}
-
-func (fs *VSSFS) initDirectorySearch(dirname string) (*syscall.Win32finddata, syscall.Handle, error) {
-	fullPath := filepath.Join(fs.root, dirname, "*")
-	pathPtr, err := syscall.UTF16PtrFromString(fullPath)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	var findData syscall.Win32finddata
-	handle, err := syscall.FindFirstFile(pathPtr, &findData)
-	if err != nil {
-		return nil, 0, fmt.Errorf("FindFirstFile failed: %w", err)
-	}
-
-	return &findData, handle, nil
-}
-
-func (fs *VSSFS) processDirectoryEntries(dirname string, handle syscall.Handle, findData *syscall.Win32finddata) ([]os.FileInfo, error) {
-	var entries []os.FileInfo
-
-	for {
-		name := syscall.UTF16ToString(findData.FileName[:])
-		if name != "." && name != ".." {
-			entryPath := filepath.Join(dirname, name)
-			fullEntryPath := filepath.Join(fs.root, entryPath)
-
-			if !fs.shouldSkipEntry(findData, fullEntryPath) {
-				info := fs.createFileInfo(entryPath, findData)
-				entries = append(entries, info)
-			}
-		}
-
-		if err := syscall.FindNextFile(handle, findData); err != nil {
-			break
-		}
-	}
-
-	return entries, nil
-}
-
-func (fs *VSSFS) createFileInfo(path string, findData *syscall.Win32finddata) *VSSFileInfo {
-	syslog.L.Infof("Creating file info for path: %s", path)
-
-	name := filepath.Base(path)
-	size := int64(findData.FileSizeHigh)<<32 + int64(findData.FileSizeLow)
-	modTime := time.Unix(0, findData.LastWriteTime.Nanoseconds())
-	stableID := fs.getFileID(findData.Reserved0, findData.Reserved1)
-
-	normalizedPath := fs.normalizePath(path)
-	fs.pathToID.Store(normalizedPath, stableID)
-	fs.idToPath.Store(stableID, normalizedPath)
-
-	syslog.L.Infof("File details - name: %s, size: %d, modTime: %v, stableID: %d",
-		name, size, modTime, stableID)
-
-	vssInfo := &VSSFileInfo{
-		name:     name,
-		size:     size,
-		mode:     fs.fileModeFromAttributes(findData.FileAttributes),
-		modTime:  modTime,
-		stableID: stableID,
-		attrs:    findData.FileAttributes,
-	}
-
-	fs.fileInfoCache.Store(normalizedPath, vssInfo)
-	syslog.L.Infof("Cached file info for %s", normalizedPath)
-
-	return vssInfo
 }
 
 func (fs *VSSFS) fileModeFromAttributes(attrs uint32) os.FileMode {
@@ -182,42 +62,56 @@ func (fs *VSSFS) shouldSkipEntry(data *syscall.Win32finddata, fullPath string) b
 	return false
 }
 
-func (fs *VSSFS) getFileID(fileIndexHigh, fileIndexLow uint32) uint64 {
-	return (uint64(fs.volumeSerial) << 48) | (uint64(fileIndexHigh) << 32) | uint64(fileIndexLow)
-}
-
-func (fs *VSSFS) getFileIDFromPath(path string) uint64 {
-	normalized := fs.normalizePath(path)
-	if id, exists := fs.pathToID.Load(normalized); exists {
-		return id.(uint64)
-	}
-	return 0
-}
-
 func (fs *VSSFS) normalizePath(path string) string {
-	var b strings.Builder
-	b.Grow(len(path) + 1)
+	// Convert to Unix-style slashes
+	unixPath := filepath.ToSlash(path)
 
-	cleanPath := filepath.Clean(path)
+	// Clean the path and make it absolute relative to the FS root
+	cleanPath := filepath.Clean(unixPath)
 	if cleanPath == "." {
 		cleanPath = ""
 	}
 
-	for _, c := range cleanPath {
-		if c == '\\' {
-			b.WriteByte('/')
-		} else {
-			b.WriteRune(unicode.ToUpper(c))
-		}
+	// Ensure leading slash and case-insensitive key (for Windows compatibility)
+	cleanPath = "/" + strings.ToLower(strings.TrimPrefix(cleanPath, "/"))
+
+	// Remove trailing slash for non-root paths
+	if len(cleanPath) > 1 {
+		cleanPath = strings.TrimSuffix(cleanPath, "/")
 	}
 
-	result := b.String()
-	if !strings.HasPrefix(result, "/") {
-		result = "/" + result
+	return cleanPath
+}
+
+func (fs *VSSFS) toWindowsPath(normalizedPath string) string {
+	// Get relative path within the filesystem
+	relPath := strings.TrimPrefix(normalizedPath, "/")
+
+	// Join with snapshot path using Windows separators
+	windowsPath := filepath.Join(fs.snapshot.SnapshotPath, filepath.FromSlash(relPath))
+
+	// Add extended-length prefix for Windows API compatibility
+	if !strings.HasPrefix(windowsPath, `\\?\`) {
+		windowsPath = `\\?\` + windowsPath
 	}
-	if len(result) > 1 && strings.HasSuffix(result, "/") {
-		result = result[:len(result)-1]
+	return windowsPath
+}
+
+func (fs *VSSFS) cacheFileInfo(normalizedPath string, findData *syscall.Win32finddata) *VSSFileInfo {
+	// Get original case from the filesystem
+	originalName := syscall.UTF16ToString(findData.FileName[:])
+
+	info := &VSSFileInfo{
+		name:     originalName,
+		size:     int64(findData.FileSizeHigh)<<32 + int64(findData.FileSizeLow),
+		modTime:  time.Unix(0, findData.LastWriteTime.Nanoseconds()),
+		mode:     fs.fileModeFromAttributes(findData.FileAttributes),
+		stableID: (uint64(findData.Reserved0) << 32) | uint64(findData.Reserved1),
 	}
 
-	return result
+	fs.fileInfoCache.Store(normalizedPath, info)
+	fs.pathToID.Store(normalizedPath, info.stableID)
+	fs.idToPath.Store(info.stableID, normalizedPath)
+
+	return info
 }
