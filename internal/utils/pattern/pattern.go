@@ -54,6 +54,8 @@ func NewPattern(glob string) (*Pattern, error) {
 		}, nil
 	}
 
+	glob = preprocessPattern(glob)
+
 	p := &Pattern{rawString: glob}
 	if glob[0] == '!' {
 		p.isNegative = true
@@ -71,7 +73,7 @@ func NewPattern(glob string) (*Pattern, error) {
 		return nil, fmt.Errorf("brace expansions not supported")
 	}
 
-	rawSegments := SplitPattern(glob)
+	rawSegments := strings.Split(glob, "/")
 	p.segments = make([]segmentInfo, 0, len(rawSegments))
 	hasDoubleWildcard := false
 
@@ -118,7 +120,7 @@ func (p *Pattern) Match(path string) bool {
 		return p.matchEmptyPath()
 	}
 
-	pathParts := SplitPattern(normalized)
+	pathParts := strings.Split(normalized, "/")
 	upperParts := make([]string, len(pathParts))
 	for i, part := range pathParts {
 		upperParts[i] = strings.ToUpper(part)

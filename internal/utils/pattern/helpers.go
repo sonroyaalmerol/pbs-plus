@@ -5,24 +5,13 @@ import (
 	"strings"
 )
 
-func SplitPattern(pattern string) []string {
-	var segments []string
-	for _, s := range strings.Split(pattern, "/") {
-		if s == "" {
-			continue
-		}
-		// Check if the segment ends with "**"
-		if strings.HasSuffix(s, "**") {
-			prefix := strings.TrimSuffix(s, "**")
-			if prefix != "" {
-				segments = append(segments, prefix)
-			}
-			segments = append(segments, "**")
-		} else {
-			segments = append(segments, s)
-		}
-	}
-	return segments
+func preprocessPattern(pattern string) string {
+	// Replace all "**" with "/**/" to force them as standalone segments
+	processed := strings.ReplaceAll(pattern, "**", "/**/")
+	// Collapse multiple slashes and trim
+	processed = strings.NewReplacer("//", "/").Replace(processed)
+	processed = strings.Trim(processed, "/")
+	return processed
 }
 
 func parseSegment(seg string) ([]token, bool, string, error) {

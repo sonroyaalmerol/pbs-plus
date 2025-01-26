@@ -86,7 +86,7 @@ func TestMatcher(t *testing.T) {
 		},
 		{
 			name:     "weird case",
-			patterns: []string{"permissions.sqlite-**", "cookies.sqlite-**"},
+			patterns: []string{"permissions.sqlite-**", "cookies.sqlite-**", "**.tmp"},
 			paths: []struct {
 				path string
 				want bool

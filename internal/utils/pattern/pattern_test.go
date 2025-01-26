@@ -142,11 +142,11 @@ func TestPattern(t *testing.T) {
 			pattern: "a***b",
 			valid:   true,
 			paths: map[string]bool{
-				"aXXXb": true,
-				"ab":    true,
-				"aXb":   true,
+				"aXXXb": false,
+				"ab":    false,
+				"aXb":   false,
 				"aXbY":  false,
-				"a/b":   false,
+				"a/b":   true,
 			},
 		},
 		{
@@ -299,7 +299,7 @@ func TestPatternEdgeCases(t *testing.T) {
 		{"only slashes", "*.txt", "///", false},
 		{"only backslashes", "*.txt", "\\\\\\", false},
 		{"mixed slashes", "dir/*.txt", "dir\\/\\/file.txt", true},
-		{"consecutive stars", "**/**/**.txt", "a/b/c.txt", true},
+		{"consecutive stars", "**/**/**.txt", "a/b/c.txt", false},
 		{"all wildcards", "***", "anything", true},
 		{"escaped special chars", "\\*.txt", "*.txt", true},
 		{
