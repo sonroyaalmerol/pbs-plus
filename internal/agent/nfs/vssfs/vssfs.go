@@ -61,17 +61,13 @@ func (fs *VSSFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.Fi
 }
 
 func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
-	syslog.L.Infof("Stat called for path: %s", filename)
 	normalizedPath := fs.normalizePath(filename)
-	syslog.L.Infof("Normalized path: %s", normalizedPath)
 
 	if cached, exists := fs.fileInfoCache.Load(normalizedPath); exists {
-		syslog.L.Infof("Returning cached FileInfo for: %s", normalizedPath)
 		return cached.(*VSSFileInfo), nil
 	}
 
 	windowsPath := fs.toWindowsPath(normalizedPath)
-	syslog.L.Infof("Windows path: %s", windowsPath)
 
 	pathPtr, err := syscall.UTF16PtrFromString(windowsPath)
 	if err != nil {
@@ -89,7 +85,6 @@ func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
 
 	foundName := syscall.UTF16ToString(findData.FileName[:])
 	expectedName := filepath.Base(normalizedPath)
-	syslog.L.Infof("Found name: %s, expected name: %s", foundName, expectedName)
 
 	if !strings.EqualFold(foundName, expectedName) && normalizedPath != "/" {
 		syslog.L.Infof("Name mismatch for: %s", normalizedPath)
@@ -97,17 +92,12 @@ func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
 	}
 
 	fileInfo := fs.cacheFileInfo(normalizedPath, &findData)
-	syslog.L.Infof("Cached FileInfo for: %s", normalizedPath)
 	return fileInfo, nil
 }
 
 func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
-	syslog.L.Infof("ReadDir called for directory: %s", dirname)
 	normalizedDir := fs.normalizePath(dirname)
-	syslog.L.Infof("Normalized directory: %s", normalizedDir)
-
 	windowsPath := fs.toWindowsPath(normalizedDir + "/*")
-	syslog.L.Infof("Windows path pattern: %s", windowsPath)
 
 	pathPtr, err := syscall.UTF16PtrFromString(windowsPath)
 	if err != nil {
@@ -126,29 +116,22 @@ func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
 	var entries []os.FileInfo
 	for {
 		name := syscall.UTF16ToString(findData.FileName[:])
-		syslog.L.Infof("Processing directory entry: %s", name)
 
 		if name != "." && name != ".." {
 			entryPath := filepath.Join(normalizedDir, name)
-			syslog.L.Infof("Entry path: %s", entryPath)
 			normalizedEntryPath := fs.normalizePath(entryPath)
 
 			if !fs.shouldSkipEntry(&findData, normalizedEntryPath) {
 				fileInfo := fs.cacheFileInfo(normalizedEntryPath, &findData)
 				entries = append(entries, fileInfo)
-				syslog.L.Infof("Added entry to results: %s", entryPath)
-			} else {
-				syslog.L.Infof("Skipping entry: %s", entryPath)
 			}
 		}
 
 		if err := syscall.FindNextFile(handle, &findData); err != nil {
-			syslog.L.Infof("FindNextFile finished or failed for: %s, error: %v", windowsPath, err)
 			break
 		}
 	}
 
-	syslog.L.Infof("ReadDir completed for %s, found %d entries", dirname, len(entries))
 	return entries, nil
 }
 

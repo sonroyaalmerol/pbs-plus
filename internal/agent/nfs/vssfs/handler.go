@@ -35,13 +35,9 @@ func (h *VSSIDCachingHandler) ToHandle(f billy.Filesystem, path []string) []byte
 	joinedPath := vssFS.normalizePath(strings.Join(path, "/"))
 
 	// Get through VSSFileInfo to ensure cache population
-	if _, err := vssFS.Stat(joinedPath); err != nil {
-		return nil
-	}
-
-	if id, exists := vssFS.pathToID.Load(joinedPath); exists {
+	if stat, err := vssFS.Stat(joinedPath); err == nil {
 		handle := make([]byte, 8)
-		binary.BigEndian.PutUint64(handle, id.(uint64))
+		binary.BigEndian.PutUint64(handle, stat.Sys().(*VSSFileInfo).stableID)
 		return handle
 	}
 

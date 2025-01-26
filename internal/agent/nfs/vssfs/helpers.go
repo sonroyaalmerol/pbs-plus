@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash/v2"
-	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"golang.org/x/sys/windows"
 )
 
@@ -47,8 +46,7 @@ func (fs *VSSFS) shouldSkipEntry(data *syscall.Win32finddata, fullPath string) b
 		return false
 	}
 
-	if matched, pattern := fs.excludedPaths.Match(fullPath); matched {
-		syslog.L.Infof("Matched pattern: %s", pattern.String())
+	if matched, _ := fs.excludedPaths.Match(fullPath); matched {
 		return true
 	}
 
