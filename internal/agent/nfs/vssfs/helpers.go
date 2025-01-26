@@ -48,6 +48,15 @@ func (fs *VSSFS) cacheRootDirectory() {
 	rootID := fs.getFileID(0, 0)
 	fs.pathToID.Store("/", rootID)
 	fs.idToPath.Store(rootID, "/")
+
+	vssInfo := &VSSFileInfo{
+		name:     "\\",
+		size:     0,
+		mode:     os.FileMode(0444) | os.ModeDir,
+		modTime:  time.Now(),
+		stableID: 0,
+	}
+	fs.fileInfoCache.Store("/", vssInfo)
 }
 
 func (fs *VSSFS) validateAndCacheFile(normalizedPath, fullPath string) error {
@@ -123,15 +132,19 @@ func (fs *VSSFS) processDirectoryEntries(dirname string, handle syscall.Handle, 
 }
 
 func (fs *VSSFS) createFileInfo(path string, findData *syscall.Win32finddata) *VSSFileInfo {
+	syslog.L.Infof("Creating file info for path: %s", path)
+
 	name := filepath.Base(path)
 	size := int64(findData.FileSizeHigh)<<32 + int64(findData.FileSizeLow)
 	modTime := time.Unix(0, findData.LastWriteTime.Nanoseconds())
-
 	stableID := fs.getFileID(findData.Reserved0, findData.Reserved1)
-	normalizedPath := fs.normalizePath(path)
 
+	normalizedPath := fs.normalizePath(path)
 	fs.pathToID.Store(normalizedPath, stableID)
 	fs.idToPath.Store(stableID, normalizedPath)
+
+	syslog.L.Infof("File details - name: %s, size: %d, modTime: %v, stableID: %d",
+		name, size, modTime, stableID)
 
 	vssInfo := &VSSFileInfo{
 		name:     name,
@@ -143,6 +156,8 @@ func (fs *VSSFS) createFileInfo(path string, findData *syscall.Win32finddata) *V
 	}
 
 	fs.fileInfoCache.Store(normalizedPath, vssInfo)
+	syslog.L.Infof("Cached file info for %s", normalizedPath)
+
 	return vssInfo
 }
 
