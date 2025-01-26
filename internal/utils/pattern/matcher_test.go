@@ -84,6 +84,16 @@ func TestMatcher(t *testing.T) {
 				{"BAZ/anything/QUX", true},
 			},
 		},
+		{
+			name:     "weird case",
+			patterns: []string{"permissions.sqlite-**", "cookies.sqlite-**"},
+			paths: []struct {
+				path string
+				want bool
+			}{
+				{"Users", false},
+			},
+		},
 	}
 
 	for _, tt := range tests {

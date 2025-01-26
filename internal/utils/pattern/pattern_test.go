@@ -133,8 +133,8 @@ func TestPattern(t *testing.T) {
 			valid:   true,
 			paths: map[string]bool{
 				"anyfile":           true,
-				"any/directory":     false,
-				"multiple/segments": false,
+				"any/directory":     true,
+				"multiple/segments": true,
 			},
 		},
 		{

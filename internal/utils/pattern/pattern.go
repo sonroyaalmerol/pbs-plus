@@ -71,7 +71,7 @@ func NewPattern(glob string) (*Pattern, error) {
 		return nil, fmt.Errorf("brace expansions not supported")
 	}
 
-	rawSegments := strings.Split(glob, "/")
+	rawSegments := SplitPattern(glob)
 	p.segments = make([]segmentInfo, 0, len(rawSegments))
 	hasDoubleWildcard := false
 
@@ -118,7 +118,7 @@ func (p *Pattern) Match(path string) bool {
 		return p.matchEmptyPath()
 	}
 
-	pathParts := strings.Split(normalized, "/")
+	pathParts := SplitPattern(normalized)
 	upperParts := make([]string, len(pathParts))
 	for i, part := range pathParts {
 		upperParts[i] = strings.ToUpper(part)

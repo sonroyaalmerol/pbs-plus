@@ -169,7 +169,6 @@ func (fs *VSSFS) shouldSkipEntry(data *syscall.Win32finddata, fullPath string) b
 
 	for _, attr := range InvalidFileAttributes {
 		if data.FileAttributes&attr != 0 {
-			syslog.L.Infof("Matched attribute: %d", attr)
 			return true
 		}
 	}

@@ -68,7 +68,6 @@ func addPatternToState(state *State, pattern *Pattern) {
 
 func (m *Matcher) Match(rawPath string) (bool, *Pattern) {
 	path := strings.ReplaceAll(rawPath, "\\", "/")
-
 	segments := strings.Split(strings.ToUpper(path), "/")
 
 	matches := m.matchSegments(m.root, segments)

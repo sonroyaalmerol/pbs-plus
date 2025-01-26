@@ -5,6 +5,26 @@ import (
 	"strings"
 )
 
+func SplitPattern(pattern string) []string {
+	var segments []string
+	for _, s := range strings.Split(pattern, "/") {
+		if s == "" {
+			continue
+		}
+		// Check if the segment ends with "**"
+		if strings.HasSuffix(s, "**") {
+			prefix := strings.TrimSuffix(s, "**")
+			if prefix != "" {
+				segments = append(segments, prefix)
+			}
+			segments = append(segments, "**")
+		} else {
+			segments = append(segments, s)
+		}
+	}
+	return segments
+}
+
 func parseSegment(seg string) ([]token, bool, string, error) {
 	if seg == "" {
 		return nil, false, "", fmt.Errorf("empty segment")
