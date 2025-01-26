@@ -146,14 +146,9 @@ func (fs *VSSFS) createFileInfo(path string, findData *syscall.Win32finddata) *V
 }
 
 func (fs *VSSFS) fileModeFromAttributes(attrs uint32) os.FileMode {
-	mode := os.FileMode(0)
+	mode := os.FileMode(0444) // Always read-only.
 	if attrs&syscall.FILE_ATTRIBUTE_DIRECTORY != 0 {
 		mode |= os.ModeDir
-	}
-	if attrs&syscall.FILE_ATTRIBUTE_READONLY != 0 {
-		mode |= 0444
-	} else {
-		mode |= 0666
 	}
 	return mode
 }
