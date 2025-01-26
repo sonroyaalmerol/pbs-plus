@@ -98,7 +98,7 @@ func (fs *VSSFS) cacheFileInfo(normalizedPath string, findData *syscall.Win32fin
 		size:     int64(findData.FileSizeHigh)<<32 + int64(findData.FileSizeLow),
 		modTime:  time.Unix(0, findData.LastWriteTime.Nanoseconds()),
 		mode:     fs.fileModeFromAttributes(findData.FileAttributes),
-		stableID: fs.generateStableID(findData),
+		stableID: fs.generateStableID(normalizedPath),
 	}
 
 	fs.fileInfoCache.Store(normalizedPath, info)
@@ -108,10 +108,6 @@ func (fs *VSSFS) cacheFileInfo(normalizedPath string, findData *syscall.Win32fin
 	return info
 }
 
-func (fs *VSSFS) generateStableID(findData *syscall.Win32finddata) uint64 {
-	h := xxhash.New()
-	binary.Write(h, binary.LittleEndian, findData.CreationTime.Nanoseconds())
-	binary.Write(h, binary.LittleEndian, findData.FileAttributes)
-	binary.Write(h, binary.LittleEndian, findData.FileName[:])
-	return h.Sum64()
+func (fs *VSSFS) generateStableID(path string) uint64 {
+	return xxhash.Sum64String(path)
 }
