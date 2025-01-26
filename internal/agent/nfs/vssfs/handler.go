@@ -12,7 +12,7 @@ import (
 	nfs "github.com/willscott/go-nfs"
 )
 
-// VSSIDCachingHandler uses VSSFS's PathToID and IDToPath for handle management.
+// VSSIDCachingHandler uses VSSFS's pathToID and idToPath for handle management.
 type VSSIDCachingHandler struct {
 	nfs.Handler
 	vssFS *VSSFS
@@ -39,7 +39,7 @@ func (h *VSSIDCachingHandler) ToHandle(f billy.Filesystem, path []string) []byte
 		return nil
 	}
 
-	if id, exists := vssFS.PathToID.Load(joinedPath); exists {
+	if id, exists := vssFS.pathToID.Load(joinedPath); exists {
 		handle := make([]byte, 8)
 		binary.BigEndian.PutUint64(handle, id.(uint64))
 		return handle
@@ -54,7 +54,7 @@ func (h *VSSIDCachingHandler) FromHandle(handle []byte) (billy.Filesystem, []str
 	}
 	stableID := binary.BigEndian.Uint64(handle)
 
-	if path, exists := h.vssFS.IDToPath.Load(stableID); exists {
+	if path, exists := h.vssFS.idToPath.Load(stableID); exists {
 		// Split path into components using the normalized version
 		var parts []string
 		if path != "/" {

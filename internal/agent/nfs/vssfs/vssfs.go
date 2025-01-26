@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
@@ -17,37 +18,34 @@ import (
 	"github.com/sonroyaalmerol/pbs-plus/internal/utils/pattern"
 )
 
-// VSSFS extends osfs while enforcing read-only operations
 type VSSFS struct {
 	billy.Filesystem
 	snapshot      *snapshots.WinVSSSnapshot
-	ExcludedPaths *pattern.Matcher
-	PartialFiles  *pattern.Matcher
+	excludedPaths *pattern.Matcher
+	partialFiles  *pattern.Matcher
 	root          string
+	volumeSerial  uint32
 
-	PathToID      sync.Map // map[string]uint64
-	IDToPath      sync.Map // map[uint64]string
-	fileInfoCache sync.Map // map[string]*VSSFileInfo
+	mu            sync.RWMutex
+	pathToID      sync.Map
+	idToPath      sync.Map
+	fileInfoCache sync.Map
 }
 
 var _ billy.Filesystem = (*VSSFS)(nil)
 
 func NewVSSFS(snapshot *snapshots.WinVSSSnapshot, baseDir string, excludedPaths *pattern.Matcher, partialFiles *pattern.Matcher) billy.Filesystem {
+	rootPath := filepath.Join(snapshot.SnapshotPath, baseDir)
 	fs := &VSSFS{
-		Filesystem:    osfs.New(filepath.Join(snapshot.SnapshotPath, baseDir), osfs.WithBoundOS()),
+		Filesystem:    osfs.New(rootPath, osfs.WithBoundOS()),
 		snapshot:      snapshot,
-		ExcludedPaths: excludedPaths,
-		PartialFiles:  partialFiles,
-		root:          filepath.Join(snapshot.SnapshotPath, baseDir),
+		excludedPaths: excludedPaths,
+		partialFiles:  partialFiles,
+		root:          rootPath,
 	}
 
-	// Pre-cache root directory
-	rootPath := fs.normalizePath("/")
-
-	rootID := getFileIDWindows(rootPath)
-	fs.PathToID.Store(rootPath, rootID)
-	fs.IDToPath.Store(rootID, rootPath)
-	fs.IDToPath.Store(rootID, rootPath)
+	fs.initVolumeSerial()
+	fs.cacheRootDirectory()
 
 	return fs
 }
@@ -63,11 +61,72 @@ func (fs *VSSFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.Fi
 	}
 
 	normalizedPath := fs.normalizePath(filename)
-	if _, err := fs.getStableID(normalizedPath); err != nil {
-		return nil, os.ErrNotExist
+	fullPath := filepath.Join(fs.root, normalizedPath)
+
+	if err := fs.validateAndCacheFile(normalizedPath, fullPath); err != nil {
+		return nil, err
 	}
 
 	return fs.Filesystem.OpenFile(filename, flag, perm)
+}
+
+func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
+	normalizedPath := fs.normalizePath(filename)
+
+	if cached, exists := fs.fileInfoCache.Load(normalizedPath); exists {
+		return cached.(*VSSFileInfo), nil
+	}
+
+	fullPath := filepath.Join(fs.root, normalizedPath)
+	pathPtr, err := syscall.UTF16PtrFromString(fullPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var findData syscall.Win32finddata
+	handle, err := syscall.FindFirstFile(pathPtr, &findData)
+	if err != nil {
+		if err == syscall.ERROR_FILE_NOT_FOUND {
+			return nil, os.ErrNotExist
+		}
+		return nil, fmt.Errorf("FindFirstFile failed: %w", err)
+	}
+	defer syscall.FindClose(handle)
+
+	foundName := syscall.UTF16ToString(findData.FileName[:])
+	expectedName := filepath.Base(normalizedPath)
+	if !strings.EqualFold(foundName, expectedName) {
+		return nil, os.ErrNotExist
+	}
+
+	if fs.shouldSkipEntry(&findData, fullPath) {
+		return nil, os.ErrNotExist
+	}
+
+	return fs.createFileInfo(normalizedPath, &findData), nil
+}
+
+func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
+	normalizedDir := fs.normalizePath(dirname)
+	if _, err := fs.Stat(normalizedDir); err != nil {
+		return nil, fmt.Errorf("directory inaccessible: %w", err)
+	}
+
+	findData, handle, err := fs.initDirectorySearch(dirname)
+	if err != nil {
+		return nil, err
+	}
+	defer syscall.FindClose(handle)
+
+	return fs.processDirectoryEntries(dirname, handle, findData)
+}
+
+func (fs *VSSFS) Lstat(filename string) (os.FileInfo, error) {
+	return fs.Stat(filename)
+}
+
+func (fs *VSSFS) Readlink(link string) (string, error) {
+	return fs.Filesystem.Readlink(link)
 }
 
 func (fs *VSSFS) Rename(oldpath, newpath string) error {
@@ -104,113 +163,4 @@ func (fs *VSSFS) Chown(name string, uid, gid int) error {
 
 func (fs *VSSFS) Chtimes(name string, atime time.Time, mtime time.Time) error {
 	return fmt.Errorf("filesystem is read-only")
-}
-
-func (fs *VSSFS) Lstat(filename string) (os.FileInfo, error) {
-	return fs.Stat(filename)
-}
-
-func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
-	info, err := fs.Filesystem.Stat(filename)
-	if err != nil {
-		return nil, err
-	}
-	return fs.getVSSFileInfo(filename, info)
-}
-
-func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
-	normalizedDir := fs.normalizePath(dirname)
-
-	if _, err := fs.getStableID(normalizedDir); err != nil {
-		return nil, fmt.Errorf("directory inaccessible: %w", err)
-	}
-
-	entries, err := fs.Filesystem.ReadDir(dirname)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read directory: %w", err)
-	}
-
-	results := make([]os.FileInfo, 0, len(entries))
-	for _, entry := range entries {
-		entryPath := filepath.Join(dirname, entry.Name())
-		normalizedEntry := fs.normalizePath(entryPath)
-		fullPath := filepath.Join(fs.root, entryPath)
-
-		if skipPath(fullPath, fs.snapshot, fs.ExcludedPaths) {
-			continue
-		}
-
-		vssInfo, err := fs.getVSSFileInfo(normalizedEntry, entry)
-		if err != nil {
-			continue
-		}
-
-		results = append(results, vssInfo)
-	}
-
-	return results, nil
-}
-
-func (fs *VSSFS) Readlink(link string) (string, error) {
-	fullPath := filepath.Join(fs.Root(), filepath.Clean(link))
-	if skipPath(fullPath, fs.snapshot, fs.ExcludedPaths) {
-		return "", os.ErrNotExist
-	}
-	return fs.Filesystem.Readlink(link)
-}
-
-func (fs *VSSFS) getStableID(path string) (uint64, error) {
-	if id, ok := fs.PathToID.Load(path); ok {
-		return id.(uint64), nil
-	}
-
-	stableID := getFileIDWindows(path)
-
-	fs.PathToID.Store(path, stableID)
-	fs.IDToPath.Store(stableID, path)
-	return stableID, nil
-}
-
-func (fs *VSSFS) getVSSFileInfo(path string, baseInfo os.FileInfo) (*VSSFileInfo, error) {
-	if cached, exists := fs.fileInfoCache.Load(path); exists {
-		return cached.(*VSSFileInfo), nil
-	}
-
-	stableID, err := fs.getStableID(path)
-	if err != nil {
-		return nil, err
-	}
-
-	vssInfo := &VSSFileInfo{
-		FileInfo: baseInfo,
-		stableID: stableID,
-	}
-
-	fs.fileInfoCache.Store(path, vssInfo)
-	return vssInfo, nil
-}
-
-func (fs *VSSFS) normalizePath(path string) string {
-	// Convert to forward slashes and clean path
-	cleanPath := filepath.ToSlash(filepath.Clean(path))
-
-	// Normalize to uppercase for case insensitivity
-	cleanPath = strings.ToUpper(cleanPath)
-
-	// Ensure root is represented as "/"
-	if cleanPath == "." || cleanPath == "" {
-		return "/"
-	}
-
-	// Add leading slash if missing
-	if !strings.HasPrefix(cleanPath, "/") {
-		cleanPath = "/" + cleanPath
-	}
-
-	// Remove trailing slash (except for root)
-	if len(cleanPath) > 1 && strings.HasSuffix(cleanPath, "/") {
-		cleanPath = cleanPath[:len(cleanPath)-1]
-	}
-
-	return cleanPath
 }
