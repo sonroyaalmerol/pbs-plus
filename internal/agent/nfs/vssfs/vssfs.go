@@ -106,7 +106,6 @@ func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
 	expectedName := filepath.Base(normalizedPath)
 	if !strings.EqualFold(foundName, expectedName) {
 		syslog.L.Infof("Stat name mismatch: found=%s, expected=%s", foundName, expectedName)
-		return nil, os.ErrNotExist
 	}
 
 	if fs.shouldSkipEntry(&findData, fullPath) {
