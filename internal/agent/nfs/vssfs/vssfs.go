@@ -132,7 +132,7 @@ func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
 	}
 	defer syscall.FindClose(handle)
 
-	return fs.processDirectoryEntries(dirname, handle, findData)
+	return fs.processDirectoryEntries(handle, findData)
 }
 
 func (fs *VSSFS) Lstat(filename string) (os.FileInfo, error) {
