@@ -33,7 +33,7 @@ type NFSSession struct {
 	statusMu    sync.RWMutex
 }
 
-func NewNFSSession(ctx context.Context, snapshot *snapshots.WinVSSSnapshot, driveLetter string, excludedPaths *pattern.Matcher) *NFSSession {
+func NewNFSSession(ctx context.Context, snapshot *snapshots.WinVSSSnapshot, driveLetter string, excludedPaths []*pattern.GlobPattern) *NFSSession {
 	cancellableCtx, cancel := context.WithCancel(ctx)
 
 	urlStr, err := registry.GetEntry(registry.CONFIG, "ServerURL", false)

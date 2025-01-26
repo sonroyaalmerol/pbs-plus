@@ -22,7 +22,7 @@ import (
 type VSSFS struct {
 	billy.Filesystem
 	snapshot      *snapshots.WinVSSSnapshot
-	excludedPaths *pattern.Matcher
+	excludedPaths []*pattern.GlobPattern
 	root          string
 
 	mu            sync.RWMutex
@@ -33,7 +33,7 @@ type VSSFS struct {
 
 var _ billy.Filesystem = (*VSSFS)(nil)
 
-func NewVSSFS(snapshot *snapshots.WinVSSSnapshot, excludedPaths *pattern.Matcher) billy.Filesystem {
+func NewVSSFS(snapshot *snapshots.WinVSSSnapshot, excludedPaths []*pattern.GlobPattern) billy.Filesystem {
 	fs := &VSSFS{
 		Filesystem:    osfs.New(snapshot.SnapshotPath, osfs.WithBoundOS()),
 		snapshot:      snapshot,

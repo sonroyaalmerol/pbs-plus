@@ -23,7 +23,11 @@ var InvalidFileAttributes = []uint32{
 }
 
 func (fs *VSSFS) GetExclusions() []string {
-	return fs.excludedPaths.ToStringArray()
+	exclusions := make([]string, len(fs.excludedPaths))
+	for i, paths := range fs.excludedPaths {
+		exclusions[i] = paths.RawString
+	}
+	return exclusions
 }
 
 func (fs *VSSFS) cacheRootDirectory() {
@@ -45,8 +49,10 @@ func (fs *VSSFS) shouldSkipEntry(data *syscall.Win32finddata, fullPath string) b
 		return false
 	}
 
-	if matched, _ := fs.excludedPaths.Match(fullPath); matched {
-		return true
+	for _, pattern := range fs.excludedPaths {
+		if pattern.Glob.Match(fullPath) {
+			return true
+		}
 	}
 
 	for _, attr := range InvalidFileAttributes {
