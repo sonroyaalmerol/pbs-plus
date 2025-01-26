@@ -94,11 +94,13 @@ func (fs *VSSFS) cacheFileInfo(normalizedPath string, findData *syscall.Win32fin
 	originalName := syscall.UTF16ToString(findData.FileName[:])
 
 	info := &VSSFileInfo{
-		name:     originalName,
-		size:     int64(findData.FileSizeHigh)<<32 + int64(findData.FileSizeLow),
-		modTime:  time.Unix(0, findData.LastWriteTime.Nanoseconds()),
-		mode:     fs.fileModeFromAttributes(findData.FileAttributes),
-		stableID: (uint64(findData.Reserved0) << 32) | uint64(findData.Reserved1),
+		name:    originalName,
+		size:    int64(findData.FileSizeHigh)<<32 + int64(findData.FileSizeLow),
+		modTime: time.Unix(0, findData.LastWriteTime.Nanoseconds()),
+		mode:    fs.fileModeFromAttributes(findData.FileAttributes),
+		stableID: (uint64(findData.FileSizeHigh) << 48) |
+			(uint64(findData.FileSizeLow) << 16) |
+			uint64(findData.CreationTime.Nanoseconds()),
 	}
 
 	fs.fileInfoCache.Store(normalizedPath, info)
