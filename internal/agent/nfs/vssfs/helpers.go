@@ -3,12 +3,14 @@
 package vssfs
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"golang.org/x/sys/windows"
 )
@@ -94,13 +96,11 @@ func (fs *VSSFS) cacheFileInfo(normalizedPath string, findData *syscall.Win32fin
 	originalName := syscall.UTF16ToString(findData.FileName[:])
 
 	info := &VSSFileInfo{
-		name:    originalName,
-		size:    int64(findData.FileSizeHigh)<<32 + int64(findData.FileSizeLow),
-		modTime: time.Unix(0, findData.LastWriteTime.Nanoseconds()),
-		mode:    fs.fileModeFromAttributes(findData.FileAttributes),
-		stableID: (uint64(findData.FileSizeHigh) << 48) |
-			(uint64(findData.FileSizeLow) << 16) |
-			uint64(findData.CreationTime.Nanoseconds()),
+		name:     originalName,
+		size:     int64(findData.FileSizeHigh)<<32 + int64(findData.FileSizeLow),
+		modTime:  time.Unix(0, findData.LastWriteTime.Nanoseconds()),
+		mode:     fs.fileModeFromAttributes(findData.FileAttributes),
+		stableID: fs.generateStableID(findData),
 	}
 
 	fs.fileInfoCache.Store(normalizedPath, info)
@@ -108,4 +108,12 @@ func (fs *VSSFS) cacheFileInfo(normalizedPath string, findData *syscall.Win32fin
 	fs.idToPath.Store(info.stableID, normalizedPath)
 
 	return info
+}
+
+func (fs *VSSFS) generateStableID(findData *syscall.Win32finddata) uint64 {
+	h := xxhash.New()
+	binary.Write(h, binary.LittleEndian, findData.CreationTime.Nanoseconds())
+	binary.Write(h, binary.LittleEndian, findData.FileAttributes)
+	binary.Write(h, binary.LittleEndian, findData.FileName[:])
+	return h.Sum64()
 }
