@@ -22,7 +22,6 @@ type VSSFS struct {
 	billy.Filesystem
 	snapshot      *snapshots.WinVSSSnapshot
 	excludedPaths *pattern.Matcher
-	partialFiles  *pattern.Matcher
 	root          string
 	volumeSerial  uint32
 
@@ -34,13 +33,12 @@ type VSSFS struct {
 
 var _ billy.Filesystem = (*VSSFS)(nil)
 
-func NewVSSFS(snapshot *snapshots.WinVSSSnapshot, baseDir string, excludedPaths *pattern.Matcher, partialFiles *pattern.Matcher) billy.Filesystem {
+func NewVSSFS(snapshot *snapshots.WinVSSSnapshot, baseDir string, excludedPaths *pattern.Matcher) billy.Filesystem {
 	rootPath := filepath.Join(snapshot.SnapshotPath, baseDir)
 	fs := &VSSFS{
 		Filesystem:    osfs.New(rootPath, osfs.WithBoundOS()),
 		snapshot:      snapshot,
 		excludedPaths: excludedPaths,
-		partialFiles:  partialFiles,
 		root:          rootPath,
 	}
 

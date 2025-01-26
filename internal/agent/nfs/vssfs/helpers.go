@@ -23,6 +23,10 @@ var InvalidFileAttributes = []uint32{
 	windows.FILE_ATTRIBUTE_REPARSE_POINT,
 }
 
+func (fs *VSSFS) GetExclusions() []string {
+	return fs.excludedPaths.ToStringArray()
+}
+
 func (fs *VSSFS) initVolumeSerial() {
 	h, err := windows.CreateFile(
 		windows.StringToUTF16Ptr(fs.root),

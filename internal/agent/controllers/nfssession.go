@@ -25,7 +25,6 @@ type NFSSessionData struct {
 	Drive         string    `json:"drive"`
 	StartTime     time.Time `json:"start_time"`
 	ExcludedPaths []string  `json:"excluded_paths_patterns"`
-	PartialFiles  []string  `json:"partial_files_patterns"`
 }
 
 var nfsSessions sync.Map
@@ -100,8 +99,7 @@ func (s *NFSSessionStore) Store(drive string, session *nfs.NFSSession) error {
 	sessionData := &NFSSessionData{
 		Drive:         drive,
 		StartTime:     time.Now(),
-		ExcludedPaths: session.FS.(*vssfs.VSSFS).ExcludedPaths.ToStringArray(),
-		PartialFiles:  session.FS.(*vssfs.VSSFS).PartialFiles.ToStringArray(),
+		ExcludedPaths: session.FS.(*vssfs.VSSFS).GetExclusions(),
 	}
 
 	s.sessions[drive] = sessionData

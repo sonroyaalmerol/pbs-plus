@@ -33,7 +33,7 @@ type NFSSession struct {
 	statusMu    sync.RWMutex
 }
 
-func NewNFSSession(ctx context.Context, snapshot *snapshots.WinVSSSnapshot, driveLetter string, excludedPaths *pattern.Matcher, partialFiles *pattern.Matcher) *NFSSession {
+func NewNFSSession(ctx context.Context, snapshot *snapshots.WinVSSSnapshot, driveLetter string, excludedPaths *pattern.Matcher) *NFSSession {
 	cancellableCtx, cancel := context.WithCancel(ctx)
 
 	urlStr, err := registry.GetEntry(registry.CONFIG, "ServerURL", false)
@@ -57,7 +57,6 @@ func NewNFSSession(ctx context.Context, snapshot *snapshots.WinVSSSnapshot, driv
 			snapshot,
 			"/",
 			excludedPaths, // Initialize from config/registry
-			partialFiles,  // Initialize from config/registry
 		),
 	}
 }
