@@ -104,8 +104,9 @@ func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
 
 	foundName := syscall.UTF16ToString(findData.FileName[:])
 	expectedName := filepath.Base(normalizedPath)
-	if !strings.EqualFold(foundName, expectedName) {
+	if !strings.EqualFold(foundName, expectedName) && expectedName != "\\" {
 		syslog.L.Infof("Stat name mismatch: found=%s, expected=%s", foundName, expectedName)
+		return nil, os.ErrNotExist
 	}
 
 	if fs.shouldSkipEntry(&findData, fullPath) {

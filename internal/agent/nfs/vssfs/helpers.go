@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"golang.org/x/sys/windows"
 )
 
@@ -155,18 +156,20 @@ func (fs *VSSFS) fileModeFromAttributes(attrs uint32) os.FileMode {
 
 func (fs *VSSFS) shouldSkipEntry(data *syscall.Win32finddata, fullPath string) bool {
 	pathWithoutSnap := strings.TrimPrefix(fullPath, fs.snapshot.SnapshotPath)
-	normalizedPath := strings.ToUpper(strings.TrimPrefix(pathWithoutSnap, "\\"))
+	normalizedPath := strings.TrimPrefix(pathWithoutSnap, "\\")
 
 	if normalizedPath == "" {
 		return false
 	}
 
-	if matched, _ := fs.excludedPaths.Match(normalizedPath); matched {
+	if matched, pattern := fs.excludedPaths.Match(normalizedPath); matched {
+		syslog.L.Infof("Matched pattern: %s", pattern.String())
 		return true
 	}
 
 	for _, attr := range InvalidFileAttributes {
 		if data.FileAttributes&attr != 0 {
+			syslog.L.Infof("Matched attribute: %d", attr)
 			return true
 		}
 	}
