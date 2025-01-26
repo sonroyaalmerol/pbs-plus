@@ -61,7 +61,7 @@ func (fs *VSSFS) shouldSkipEntry(data *syscall.Win32finddata, fullPath string) b
 
 func (fs *VSSFS) normalizePath(path string) string {
 	// Convert to Unix-style slashes
-	unixPath := filepath.ToSlash(path)
+	unixPath := strings.ReplaceAll(path, "\\", "/")
 
 	// Clean the path and make it absolute relative to the FS root
 	cleanPath := filepath.Clean(unixPath)
