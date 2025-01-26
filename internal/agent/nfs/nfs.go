@@ -55,7 +55,6 @@ func NewNFSSession(ctx context.Context, snapshot *snapshots.WinVSSSnapshot, driv
 		serverURL:   parsedURL,
 		FS: vssfs.NewVSSFS(
 			snapshot,
-			"/",
 			excludedPaths, // Initialize from config/registry
 		),
 	}
