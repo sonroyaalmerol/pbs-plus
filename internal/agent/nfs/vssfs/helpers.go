@@ -212,11 +212,6 @@ func (fs *VSSFS) normalizePath(path string) string {
 		cleanPath = ""
 	}
 
-	// Handle root directory case
-	if cleanPath == "/" || cleanPath == "\\" {
-		return "/"
-	}
-
 	for _, c := range cleanPath {
 		if c == '\\' {
 			b.WriteByte('/')
@@ -229,13 +224,8 @@ func (fs *VSSFS) normalizePath(path string) string {
 	if !strings.HasPrefix(result, "/") {
 		result = "/" + result
 	}
-
-	// Don't remove trailing slash for directories
-	// This prevents the double directory issue
-	if info, err := fs.Filesystem.Stat(path); err == nil && !info.IsDir() {
-		if len(result) > 1 && strings.HasSuffix(result, "/") {
-			result = result[:len(result)-1]
-		}
+	if len(result) > 1 && strings.HasSuffix(result, "/") {
+		result = result[:len(result)-1]
 	}
 
 	return result
