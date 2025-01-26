@@ -157,6 +157,10 @@ func (fs *VSSFS) shouldSkipEntry(data *syscall.Win32finddata, fullPath string) b
 	pathWithoutSnap := strings.TrimPrefix(fullPath, fs.snapshot.SnapshotPath)
 	normalizedPath := strings.ToUpper(strings.TrimPrefix(pathWithoutSnap, "\\"))
 
+	if normalizedPath == "" {
+		return false
+	}
+
 	if matched, _ := fs.excludedPaths.Match(normalizedPath); matched {
 		return true
 	}
