@@ -14,6 +14,7 @@ import (
 	"github.com/kardianos/service"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"golang.org/x/sys/windows/registry"
+	_ "net/http/pprof"
 )
 
 var Version = "v0.0.0"
