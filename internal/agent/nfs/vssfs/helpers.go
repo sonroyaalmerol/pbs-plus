@@ -3,7 +3,6 @@
 package vssfs
 
 import (
-	"encoding/binary"
 	"os"
 	"path/filepath"
 	"strings"
