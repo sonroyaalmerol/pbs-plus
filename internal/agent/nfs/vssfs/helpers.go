@@ -68,7 +68,7 @@ func (fs *VSSFS) normalizePath(path string) string {
 	if cleanPath == "." || cleanPath == "" {
 		cleanPath = ""
 	}
-	cleanPath = "/" + strings.ToLower(cleanPath)
+	cleanPath = "/" + cleanPath
 	if len(cleanPath) > 1 {
 		cleanPath = strings.TrimSuffix(cleanPath, "/")
 	}

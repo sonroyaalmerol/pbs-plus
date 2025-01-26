@@ -131,9 +131,10 @@ func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
 		if name != "." && name != ".." {
 			entryPath := filepath.Join(normalizedDir, name)
 			syslog.L.Infof("Entry path: %s", entryPath)
+			normalizedEntryPath := fs.normalizePath(entryPath)
 
-			if !fs.shouldSkipEntry(&findData, entryPath) {
-				fileInfo := fs.cacheFileInfo(entryPath, &findData)
+			if !fs.shouldSkipEntry(&findData, normalizedEntryPath) {
+				fileInfo := fs.cacheFileInfo(normalizedEntryPath, &findData)
 				entries = append(entries, fileInfo)
 				syslog.L.Infof("Added entry to results: %s", entryPath)
 			} else {
