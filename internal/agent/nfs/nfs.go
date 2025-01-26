@@ -90,7 +90,7 @@ func (s *NFSSession) Serve() error {
 		session: s,
 	}
 
-	nfs.SetLogger(&nfsLogger{})
+	// nfs.SetLogger(&nfsLogger{})
 
 	syslog.L.Infof("[NFS.Serve] Serving NFS on port %s", port)
 
