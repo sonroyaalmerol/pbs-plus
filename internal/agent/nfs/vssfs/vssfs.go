@@ -78,8 +78,7 @@ func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
 	var findData syscall.Win32finddata
 	handle, err := syscall.FindFirstFile(pathPtr, &findData)
 	if err != nil {
-		syslog.L.Infof("FindFirstFile failed for: %s, error: %v", windowsPath, err)
-		return nil, fmt.Errorf("FindFirstFile failed: %w", err)
+		return nil, os.ErrNotExist
 	}
 	defer syscall.FindClose(handle)
 
@@ -108,8 +107,7 @@ func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
 	var findData syscall.Win32finddata
 	handle, err := syscall.FindFirstFile(pathPtr, &findData)
 	if err != nil {
-		syslog.L.Infof("FindFirstFile failed for: %s, error: %v", windowsPath, err)
-		return nil, os.ErrPermission
+		return nil, os.ErrNotExist
 	}
 	defer syscall.FindClose(handle)
 
