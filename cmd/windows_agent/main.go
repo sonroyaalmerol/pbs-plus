@@ -4,6 +4,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime/debug"
@@ -86,6 +88,10 @@ func (w *watchdogService) Stop(s service.Service) error {
 }
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	svcConfig := &service.Config{
 		Name:        "PBSPlusAgent",
 		DisplayName: "PBS Plus Agent",
