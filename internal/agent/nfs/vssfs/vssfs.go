@@ -55,12 +55,44 @@ func (fs *VSSFS) Create(filename string) (billy.File, error) {
 	return nil, fmt.Errorf("filesystem is read-only")
 }
 
-func (fs *VSSFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
+func (fs *VSSFS) Open(filename string) (billy.File, error) {
+	return fs.OpenFile(filename, os.O_RDONLY, 0)
+}
+
+func (fs *VSSFS) OpenFile(filename string, flag int, _ os.FileMode) (billy.File, error) {
 	if flag&(os.O_WRONLY|os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_TRUNC) != 0 {
 		return nil, fmt.Errorf("filesystem is read-only")
 	}
 
-	return fs.Filesystem.OpenFile(filename, flag, perm)
+	path := filepath.Join(fs.root, filename)
+
+	pathPtr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+
+	flags := uint32(
+		windows.FILE_FLAG_BACKUP_SEMANTICS |
+			windows.FILE_FLAG_SEQUENTIAL_SCAN,
+	)
+
+	handle, err := windows.CreateFile(
+		pathPtr,
+		windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		flags,
+		0,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &vssFile{
+		handle: handle,
+		name:   filename,
+	}, nil
 }
 
 func (fs *VSSFS) Rename(oldpath, newpath string) error {

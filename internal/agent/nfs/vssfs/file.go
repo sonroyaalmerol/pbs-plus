@@ -3,72 +3,105 @@
 package vssfs
 
 import (
-	"io/fs"
+	"io"
 	"os"
-	"time"
+	"sync"
+	"syscall"
 
-	"github.com/willscott/go-nfs/file"
 	"golang.org/x/sys/windows"
 )
 
-type VSSFileInfo struct {
-	stableID uint64
-	name     string
-	size     int64
-	mode     fs.FileMode
-	modTime  time.Time
+type vssFile struct {
+	handle windows.Handle
+	name   string
+	offset int64
+	mu     sync.Mutex
 }
 
-func (fi *VSSFileInfo) Name() string       { return fi.name }
-func (fi *VSSFileInfo) Size() int64        { return fi.size }
-func (fi *VSSFileInfo) Mode() fs.FileMode  { return fi.mode }
-func (fi *VSSFileInfo) ModTime() time.Time { return fi.modTime }
-func (fi *VSSFileInfo) IsDir() bool        { return fi.Mode().IsDir() }
-func (vi *VSSFileInfo) Sys() interface{} {
-	nlink := uint32(1)
-	if vi.IsDir() {
-		nlink = 2 // Minimum links for directories (self + parent)
-	}
-
-	return file.FileInfo{
-		Nlink:  nlink,
-		UID:    1000,
-		GID:    1000,
-		Major:  0,
-		Minor:  0,
-		Fileid: vi.stableID,
-	}
+func (f *vssFile) Name() string {
+	return f.name
 }
 
-func createFileInfoFromFindData(name string, path string, fd *windows.Win32finddata, vssfs *VSSFS) os.FileInfo {
-	var mode fs.FileMode
+func (f *vssFile) Read(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-	// Set base permissions
-	if fd.FileAttributes&windows.FILE_ATTRIBUTE_READONLY != 0 {
-		mode = 0444 // Read-only for everyone
-	} else {
-		mode = 0666 // Read-write for everyone
+	var bytesRead uint32
+	err := windows.ReadFile(f.handle, p, &bytesRead, nil)
+	if err != nil {
+		return 0, err
+	}
+	f.offset += int64(bytesRead)
+	return int(bytesRead), nil
+}
+
+func (f *vssFile) ReadAt(p []byte, off int64) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	current := f.offset
+	defer func() {
+		_, _ = f.seekLocked(current, io.SeekStart)
+	}()
+
+	_, err := f.seekLocked(off, io.SeekStart)
+	if err != nil {
+		return 0, err
 	}
 
-	// Add directory flag and execute permissions
-	if fd.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0 {
-		mode |= os.ModeDir | 0111 // Add execute bits for traversal
-		// Set directory-specific permissions
-		mode = (mode & 0666) | 0111 | os.ModeDir // Final mode: drwxr-xr-x
+	var bytesRead uint32
+	err = windows.ReadFile(f.handle, p, &bytesRead, nil)
+	return int(bytesRead), err
+}
+
+func (f *vssFile) Seek(offset int64, whence int) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.seekLocked(offset, whence)
+}
+
+func (f *vssFile) seekLocked(offset int64, whence int) (int64, error) {
+	var moveMethod uint32
+	switch whence {
+	case io.SeekStart:
+		moveMethod = windows.FILE_BEGIN
+	case io.SeekCurrent:
+		moveMethod = windows.FILE_CURRENT
+	case io.SeekEnd:
+		moveMethod = windows.FILE_END
+	default:
+		return 0, syscall.EINVAL
 	}
 
-	size := int64(fd.FileSizeHigh)<<32 + int64(fd.FileSizeLow)
-	modTime := time.Unix(0, fd.LastWriteTime.Nanoseconds())
-
-	stableID := getFileIDWindows(path)
-	vssfs.PathToID.Store(path, stableID)
-	vssfs.IDToPath.Store(stableID, path)
-
-	return &VSSFileInfo{
-		name:     name,
-		size:     size,
-		mode:     mode,
-		modTime:  modTime,
-		stableID: getFileIDWindows(path),
+	newOffset, err := windows.Seek(f.handle, offset, int(moveMethod))
+	if err != nil {
+		return 0, err
 	}
+
+	f.offset = newOffset
+	return newOffset, nil
+}
+
+func (f *vssFile) Write(p []byte) (int, error) {
+	return 0, os.ErrPermission
+}
+
+func (f *vssFile) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return windows.CloseHandle(f.handle)
+}
+
+func (f *vssFile) Truncate(size int64) error {
+	return os.ErrPermission
+}
+
+func (f *vssFile) Lock() error {
+	return nil
+}
+
+func (f *vssFile) Unlock() error {
+	return nil
 }
