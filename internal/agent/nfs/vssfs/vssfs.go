@@ -28,13 +28,11 @@ type VSSFS struct {
 var _ billy.Filesystem = (*VSSFS)(nil)
 
 func NewVSSFS(snapshot *snapshots.WinVSSSnapshot, baseDir string) billy.Filesystem {
-	fs := &VSSFS{
+	return &VSSFS{
 		Filesystem: osfs.New(filepath.Join(snapshot.SnapshotPath, baseDir), osfs.WithBoundOS()),
 		snapshot:   snapshot,
 		root:       filepath.Join(snapshot.SnapshotPath, baseDir),
 	}
-
-	return fs
 }
 
 // Override write operations to return read-only errors

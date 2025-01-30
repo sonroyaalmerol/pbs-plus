@@ -14,6 +14,7 @@ import (
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/nfs/vssfs"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/registry"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/snapshots"
+	"github.com/sonroyaalmerol/pbs-plus/internal/store/constants"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"github.com/sonroyaalmerol/pbs-plus/internal/utils"
 	nfs "github.com/willscott/go-nfs"
@@ -93,11 +94,16 @@ func (s *NFSSession) Serve() error {
 
 	syslog.L.Infof("[NFS.Serve] Serving NFS on port %s", port)
 
-	vssHandler, err := vssfs.NewVSSIDHandler(s.FS.(*vssfs.VSSFS), handler)
+	pauseCh, ok := constants.RegenPauseChannels[s.DriveLetter]
+	if !ok {
+		constants.RegenPauseChannels[s.DriveLetter] = make(chan struct{})
+		pauseCh = constants.RegenPauseChannels[s.DriveLetter]
+	}
+
+	vssHandler, err := vssfs.NewVSSIDHandler(s.FS.(*vssfs.VSSFS), handler, pauseCh)
 	if err != nil {
 		return fmt.Errorf("unable to handle nfs: %w", err)
 	}
-	defer vssHandler.ClearHandles()
 
 	return nfs.Serve(listener, vssHandler)
 }

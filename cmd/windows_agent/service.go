@@ -21,7 +21,9 @@ import (
 	"github.com/kardianos/service"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/controllers"
+	"github.com/sonroyaalmerol/pbs-plus/internal/agent/nfs/vssfs"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/registry"
+	"github.com/sonroyaalmerol/pbs-plus/internal/store/constants"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"github.com/sonroyaalmerol/pbs-plus/internal/utils"
 	"github.com/sonroyaalmerol/pbs-plus/internal/websockets"
@@ -41,10 +43,12 @@ type AgentDrivesRequest struct {
 }
 
 type agentService struct {
-	svc    service.Service
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	svc          service.Service
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	pregenMu     sync.Mutex
+	pregenStatus map[string]bool
 }
 
 func (p *agentService) Start(s service.Service) error {
@@ -176,6 +180,31 @@ func (p *agentService) initializeDrives() error {
 	drives, err := utils.GetLocalDrives()
 	if err != nil {
 		return fmt.Errorf("failed to get local drives list: %w", err)
+	}
+	for _, drive := range drives {
+		p.pregenMu.Lock()
+		pregenStatus, ok := p.pregenStatus[drive.Letter]
+		if pregenStatus && ok {
+			p.pregenMu.Unlock()
+			continue
+		}
+		p.pregenStatus[drive.Letter] = true
+		p.pregenMu.Unlock()
+
+		driveLetter := drive.Letter
+		go func(letter string) {
+			defer func() {
+				p.pregenMu.Lock()
+				p.pregenStatus[letter] = false
+				p.pregenMu.Unlock()
+			}()
+			constants.RegenPauseChannels[letter] = make(chan struct{})
+			if err := vssfs.PreGenerateHandles(p.ctx, fmt.Sprintf("%s:\\", letter), constants.RegenPauseChannels[letter]); err != nil {
+				if err != context.Canceled {
+					syslog.L.Errorf("Handle pre-generator (%s) error: %v", letter, err)
+				}
+			}
+		}(driveLetter)
 	}
 
 	reqBody, err := json.Marshal(&AgentDrivesRequest{

@@ -105,6 +105,7 @@ func main() {
 	}
 
 	prg := &agentService{}
+	prg.pregenStatus = make(map[string]bool)
 	watchdog := newWatchdogService(prg)
 
 	s, err := service.New(watchdog, svcConfig)
