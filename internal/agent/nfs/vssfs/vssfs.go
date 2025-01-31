@@ -13,9 +13,16 @@ import (
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/sonroyaalmerol/pbs-plus/internal/agent/nfs/windows_utils"
+	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/snapshots"
 	"golang.org/x/sys/windows"
+)
+
+const (
+	cacheSizePercent    = 5  // 5% of total system memory
+	evictionThreshold   = 80 // Evict when system memory usage exceeds 80%
+	monitorInterval     = 10 * time.Second
+	approxEntryOverhead = 100 // Estimated overhead per cache entry in bytes
 )
 
 // VSSFS extends osfs while enforcing read-only operations
@@ -23,6 +30,10 @@ type VSSFS struct {
 	billy.Filesystem
 	snapshot *snapshots.WinVSSSnapshot
 	root     string
+
+	cache     *ConcurrentLRUCache
+	stopEvict chan struct{}
+	totalMem  uint64
 }
 
 var _ billy.Filesystem = (*VSSFS)(nil)
@@ -32,9 +43,37 @@ func NewVSSFS(snapshot *snapshots.WinVSSSnapshot, baseDir string) billy.Filesyst
 		Filesystem: osfs.New(filepath.Join(snapshot.SnapshotPath, baseDir), osfs.WithBoundOS()),
 		snapshot:   snapshot,
 		root:       filepath.Join(snapshot.SnapshotPath, baseDir),
+		stopEvict:  make(chan struct{}),
 	}
 
+	// Get total system memory
+	if vm, err := mem.VirtualMemory(); err == nil {
+		fs.totalMem = vm.Total
+	} else {
+		// Fallback to 1GB if memory detection fails
+		fs.totalMem = 1 << 30
+	}
+
+	shardCount := calculateShardCount()
+	fs.cache = NewConcurrentLRUCache(shardCount, uint64(float64(fs.totalMem)*cacheSizePercent/100))
+
+	go fs.monitorMemoryPressure()
 	return fs
+}
+
+func NewConcurrentLRUCache(shardCount int, maxSize uint64) *ConcurrentLRUCache {
+	cache := &ConcurrentLRUCache{
+		shards:    make([]*cacheShard, shardCount),
+		shardMask: uint64(shardCount - 1),
+	}
+	for i := range cache.shards {
+		cache.shards[i] = &cacheShard{
+			entries: make(map[string]*cacheEntry),
+			order:   make([]string, 0),
+		}
+	}
+	cache.maxSize.Store(maxSize)
+	return cache
 }
 
 // Override write operations to return read-only errors
@@ -123,21 +162,33 @@ func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	if filename == "." || filename == "" {
 		fullPath = fs.root
 		windowsPath = "."
 	}
 
+	// Try cache first
+	if info, err := fs.cache.Get(fullPath); err == nil {
+		return info, nil
+	}
+
+	// Check memory pressure before filesystem operation
+	if vm, err := mem.VirtualMemory(); err == nil && vm.UsedPercent >= evictionThreshold {
+		fs.cache.Evict(fs.cache.maxSize.Load() / 2)
+	}
+
 	pathPtr, err := windows.UTF16PtrFromString(fullPath)
 	if err != nil {
+		fs.cache.Set(fullPath, nil, err)
 		return nil, err
 	}
 
 	var findData windows.Win32finddata
 	handle, err := windows.FindFirstFile(pathPtr, &findData)
 	if err != nil {
-		return nil, mapWinError(err, filename)
+		mappedErr := mapWinError(err, filename)
+		fs.cache.Set(fullPath, nil, err)
+		return nil, mappedErr
 	}
 	defer windows.FindClose(handle)
 
@@ -146,22 +197,19 @@ func (fs *VSSFS) Stat(filename string) (os.FileInfo, error) {
 	if filename == "." {
 		expectedName = foundName
 	}
-
 	if !strings.EqualFold(foundName, expectedName) {
+		fs.cache.Set(fullPath, nil, os.ErrNotExist)
 		return nil, os.ErrNotExist
 	}
 
-	// Use foundName as the file name for FileInfo
 	name := foundName
-	if filename == "." {
-		name = "."
-	}
-	if filename == "/" {
-		name = "/"
+	switch filename {
+	case ".", "/":
+		name = filename
 	}
 
 	info := createFileInfoFromFindData(name, windowsPath, &findData)
-
+	fs.cache.Set(fullPath, info, nil)
 	return info, nil
 }
 
@@ -171,14 +219,19 @@ func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	if dirname == "." || dirname == "" {
 		windowsDir = "."
 		fullDirPath = fs.root
 	}
+
 	searchPath := filepath.Join(fullDirPath, "*")
 	var findData windows.Win32finddata
-	handle, err := windows_utils.FindFirstFileEx(searchPath, &findData)
+	utf16Path, err := windows.UTF16PtrFromString(searchPath)
+	if err != nil {
+		return nil, mapWinError(err, dirname)
+	}
+
+	handle, err := windows.FindFirstFile(utf16Path, &findData)
 	if err != nil {
 		return nil, mapWinError(err, dirname)
 	}
@@ -188,9 +241,18 @@ func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
 	for {
 		name := windows.UTF16ToString(findData.FileName[:])
 		if name != "." && name != ".." {
-			winEntryPath := filepath.Join(windowsDir, name)
 			if !skipPathWithAttributes(findData.FileAttributes) {
-				info := createFileInfoFromFindData(name, winEntryPath, &findData)
+				entryFullPath := filepath.Join(fullDirPath, name)
+				winEntryPath := filepath.Join(windowsDir, name)
+
+				var info os.FileInfo
+
+				if entry, err := fs.cache.Get(entryFullPath); err == nil {
+					info = entry
+				} else {
+					createFileInfoFromFindData(name, winEntryPath, &findData)
+					fs.cache.Set(entryFullPath, info, nil)
+				}
 				entries = append(entries, info)
 			}
 		}
@@ -203,6 +265,15 @@ func (fs *VSSFS) ReadDir(dirname string) ([]os.FileInfo, error) {
 		}
 	}
 	return entries, nil
+}
+
+func (fs *VSSFS) ClearCache() {
+	fs.cache.Evict(0)
+}
+
+func (fs *VSSFS) Close() {
+	fs.ClearCache()
+	close(fs.stopEvict)
 }
 
 func mapWinError(err error, path string) error {
@@ -233,4 +304,32 @@ func (fs *VSSFS) abs(filename string) (string, error) {
 	}
 
 	return path, nil
+}
+
+func (fs *VSSFS) monitorMemoryPressure() {
+	ticker := time.NewTicker(monitorInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// Get current memory usage
+			vm, err := mem.VirtualMemory()
+			if err != nil {
+				continue
+			}
+
+			// Update cache max size based on current available memory
+			newMax := uint64(float64(vm.Available) * cacheSizePercent / 100)
+			fs.cache.maxSize.Store(newMax)
+
+			// Check memory pressure
+			if vm.UsedPercent >= evictionThreshold {
+				fs.cache.Evict(uint64(float64(newMax) * 0.8))
+			}
+
+		case <-fs.stopEvict:
+			return
+		}
+	}
 }

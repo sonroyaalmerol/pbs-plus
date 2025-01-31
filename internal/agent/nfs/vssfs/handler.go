@@ -128,5 +128,7 @@ func (h *VSSIDHandler) ClearHandles() {
 	h.activeHandlesMu.Lock()
 	defer h.activeHandlesMu.Unlock()
 
+	h.vssFS.Close()
+
 	h.activeHandles = make(map[uint64]string)
 }
