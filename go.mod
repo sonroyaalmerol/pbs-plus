@@ -18,7 +18,7 @@ require (
 	github.com/willscott/go-nfs v0.0.3
 	github.com/zeebo/xxh3 v1.0.2
 	golang.org/x/crypto v0.32.0
-	golang.org/x/sys v0.29.0
+	golang.org/x/sys v0.30.0
 	golang.org/x/time v0.9.0
 )
 
