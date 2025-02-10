@@ -8,6 +8,9 @@ Ext.define('PBS.plusPanel.LogView', {
 
   scrollToEnd: true,
 
+  // maximum number of live log lines to keep cached
+  maxCachedLines: 1000,
+
   // callback for load failure, used for ceph
   failCallback: undefined,
 
@@ -59,63 +62,72 @@ Ext.define('PBS.plusPanel.LogView', {
     },
 
     /**
-     * Instead of building one huge content string whose length equals the log’s
-     * total number of lines, we build a virtualized view.
+     * updateView builds a virtualized view for the log output.
      *
-     * We create a spacer div at the top whose height is:
-     *    startLine * lineHeight,
-     * then list our fetched (visible) lines and add
-     * a spacer at the bottom to simulate the remaining lines.
+     * In live mode we use a cached array and trim it as needed so that old log
+     * lines (not visible) don’t accumulate indefinitely.
+     *
+     * When auto-scrolling to the bottom, we normally call updateStart to adjust
+     * the loaded range. However, if we're in live mode the auto-scroll (i.e. to
+     * Infinity) should not force API loads for intermediate pages.
      */
-    updateView: function (fetchedLines, startLine, total) {
+    updateView: function (lines, startLine, total) {
       let me = this;
       let view = me.getView();
       let viewModel = me.getViewModel();
       let content = me.lookup('content');
       let data = viewModel.get('data');
 
-      // Avoid needless DOM updates
+      // Avoid unnecessary updates (unless just getting the first output)
       if (
         startLine === data.start &&
         total === data.total &&
-        fetchedLines.length === data.fetchedLines
+        lines.length === data.fetchedLines
       ) {
         if (total !== 1) {
-          return;
+          return; // same content, skip setting and scrolling
         }
       }
       viewModel.set('data', {
         start: startLine,
         total: total,
-        fetchedLines: fetchedLines.length,
+        fetchedLines: lines.length,
       });
 
       let scrollPos = me.scrollPosBottom();
       let scrollToBottom = view.scrollToEnd && scrollPos <= 5;
 
-      // Build spacer divs to simulate the full log file height.
+      // Build spacer divs to simulate the full file height.
       let aboveHeight = startLine * view.lineHeight;
-      let belowCount = total - startLine - fetchedLines.length;
+      let belowCount = total - startLine - lines.length;
       let belowHeight =
         belowCount > 0 ? belowCount * view.lineHeight : 0;
 
       let spacerTop = `<div style="height:${aboveHeight}px"></div>`;
       let spacerBottom = `<div style="height:${belowHeight}px"></div>`;
 
-      // Only the fetched (visible) lines are joined and inserted
       let htmlContent =
-        spacerTop + fetchedLines.join('<br>') + spacerBottom;
+        spacerTop + lines.join('<br>') + spacerBottom;
       content.update(htmlContent);
 
       if (scrollToBottom) {
         let scroller = view.getScrollable();
         scroller.suspendEvent('scroll');
         view.scrollTo(0, Infinity);
-        me.updateStart(true);
+        // Only update start if NOT in live mode. In live mode we are appending lines,
+        // so paging through intermediate pages isn’t necessary.
+        if (!viewModel.get('livemode')) {
+          me.updateStart(true);
+        }
         scroller.resumeEvent('scroll');
       }
     },
 
+    /**
+     * doLoad initiates an API call. In live mode we accumulate the log lines in a
+     * cache and trim old entries. In non-live (timespan) mode we update the view with
+     * the currently fetched chunk.
+     */
     doLoad: function () {
       let me = this;
       if (me.running) {
@@ -125,6 +137,7 @@ Ext.define('PBS.plusPanel.LogView', {
       me.running = true;
       let view = me.getView();
       let viewModel = me.getViewModel();
+
       Proxmox.Utils.API2Request({
         url: view.url,
         params: viewModel.get('params'),
@@ -134,16 +147,42 @@ Ext.define('PBS.plusPanel.LogView', {
             return;
           }
           Proxmox.Utils.setErrorMask(me, false);
+
           let total = response.result.total;
-          let fetchedLines = [];
-          // Use the 'start' parameter (or 0 if undefined)
-          let startParam = viewModel.get('params.start') || 0;
-          // Instead of a giant array with empty gaps, we simply push
-          // the fetched lines.
+          let newFetchedLines = [];
           Ext.Array.each(response.result.data, function (line) {
-            fetchedLines.push(Ext.htmlEncode(line.t));
+            newFetchedLines.push(Ext.htmlEncode(line.t));
           });
-          me.updateView(fetchedLines, startParam, total);
+
+          if (viewModel.get('livemode')) {
+            if (!me.cachedLines) {
+              me.cachedLines = newFetchedLines;
+            } else {
+              let currentCount = me.cachedLines.length;
+              if (total > currentCount) {
+                // Append new lines (duplicates should be minimal)
+                me.cachedLines = me.cachedLines.concat(
+                  newFetchedLines
+                );
+              }
+            }
+            // Trim cachedLines if exceeding maxCachedLines.
+            if (
+              me.maxCachedLines &&
+              me.cachedLines.length > me.maxCachedLines
+            ) {
+              let removeCount =
+                me.cachedLines.length - me.maxCachedLines;
+              me.cachedLines.splice(0, removeCount);
+            }
+            // Compute effective start based on how many cached lines we have.
+            let effectiveStart = total - me.cachedLines.length;
+            me.updateView(me.cachedLines, effectiveStart, total);
+          } else {
+            let startParam = viewModel.get('params.start') || 0;
+            me.updateView(newFetchedLines, startParam, total);
+          }
+
           me.running = false;
           if (me.requested) {
             me.requested = false;
@@ -166,15 +205,24 @@ Ext.define('PBS.plusPanel.LogView', {
       });
     },
 
+    /**
+     * updateStart calculates the new start parameter for the next load request.
+     * To prevent massive pagination when auto-scrolling in live mode, we simply skip
+     * updating the start when in live mode.
+     */
     updateStart: function (scrolledToBottom, targetLine) {
       let me = this;
-      let view = me.getView(),
-        viewModel = me.getViewModel();
+      let view = me.getView();
+      let viewModel = me.getViewModel();
+
+      // In live mode we do not update the start parameter.
+      if (viewModel.get('livemode')) {
+        return;
+      }
 
       let limit = viewModel.get('params.limit');
       let total = viewModel.get('data').total || 0;
 
-      // Heuristic: if scrolling up load more before, if scrolling down load more after.
       let startRatio =
         view.lastTargetLine && view.lastTargetLine > targetLine
           ? 2 / 3
@@ -192,8 +240,8 @@ Ext.define('PBS.plusPanel.LogView', {
 
     onScroll: function (x, y) {
       let me = this;
-      let view = me.getView(),
-        viewModel = me.getViewModel();
+      let view = me.getView();
+      let viewModel = me.getViewModel();
 
       let line = view.getScrollY() / view.lineHeight;
       let viewLines = view.getHeight() / view.lineHeight;
@@ -207,7 +255,10 @@ Ext.define('PBS.plusPanel.LogView', {
       let { start, limit } = viewModel.get('params');
       let margin = start < 20 ? 0 : 20;
 
-      if (viewStart < start + margin || viewEnd > start + limit - margin) {
+      if (
+        viewStart < start + margin ||
+        viewEnd > start + limit - margin
+      ) {
         me.updateStart(false, line);
       }
     },
@@ -217,8 +268,9 @@ Ext.define('PBS.plusPanel.LogView', {
       let viewModel = me.getViewModel();
       viewModel.set('livemode', true);
       viewModel.set('params', { start: 0, limit: 510 });
+      // Reset cachedLines
+      me.cachedLines = [];
       let view = me.getView();
-      delete view.content;
       view.scrollToEnd = true;
       me.updateView([], 0, 0);
     },
@@ -226,18 +278,17 @@ Ext.define('PBS.plusPanel.LogView', {
     onTimespan: function () {
       let me = this;
       me.getViewModel().set('livemode', false);
+      // Clear any cached live data.
+      me.cachedLines = null;
       me.updateView([], 0, 0);
-      // Directly apply currently selected values without button click.
       me.updateParams();
     },
 
     init: function (view) {
       let me = this;
-
       if (!view.url) {
-        throw 'no url specified';
+        throw "no url specified";
       }
-
       let viewModel = this.getViewModel();
       let since = new Date();
       since.setDate(since.getDate() - 3);
@@ -252,7 +303,7 @@ Ext.define('PBS.plusPanel.LogView', {
       );
 
       view.loadTask = new Ext.util.DelayedTask(me.doLoad, me);
-
+      me.cachedLines = null;
       me.updateParams();
       view.task = Ext.TaskManager.start({
         run: () => {
@@ -305,7 +356,6 @@ Ext.define('PBS.plusPanel.LogView', {
     x: 'auto',
     y: 'auto',
     listeners: {
-      // We hook the internal scroller’s scroll event here.
       scroll: {
         fn: function (scroller, x, y) {
           let controller = this.component.getController();
@@ -319,9 +369,7 @@ Ext.define('PBS.plusPanel.LogView', {
   },
 
   tbar: {
-    bind: {
-      hidden: '{hide_timespan}',
-    },
+    bind: { hidden: '{hide_timespan}' },
     items: [
       '->',
       {
@@ -329,16 +377,12 @@ Ext.define('PBS.plusPanel.LogView', {
         items: [
           {
             text: gettext('Live Mode'),
-            bind: {
-              pressed: '{livemode}',
-            },
+            bind: { pressed: '{livemode}' },
             handler: 'onLiveMode',
           },
           {
             text: gettext('Select Timespan'),
-            bind: {
-              pressed: '{!livemode}',
-            },
+            bind: { pressed: '{!livemode}' },
             handler: 'onTimespan',
           },
         ],
@@ -346,9 +390,7 @@ Ext.define('PBS.plusPanel.LogView', {
       {
         xtype: 'box',
         autoEl: { cn: gettext('Since') + ':' },
-        bind: {
-          disabled: '{livemode}',
-        },
+        bind: { disabled: '{livemode}' },
       },
       {
         xtype: 'proxmoxDateTimeField',
@@ -365,9 +407,7 @@ Ext.define('PBS.plusPanel.LogView', {
       {
         xtype: 'box',
         autoEl: { cn: gettext('Until') + ':' },
-        bind: {
-          disabled: '{livemode}',
-        },
+        bind: { disabled: '{livemode}' },
       },
       {
         xtype: 'proxmoxDateTimeField',
@@ -385,9 +425,7 @@ Ext.define('PBS.plusPanel.LogView', {
         xtype: 'button',
         text: 'Update',
         handler: 'updateParams',
-        bind: {
-          disabled: '{livemode}',
-        },
+        bind: { disabled: '{livemode}' },
       },
     ],
   },
