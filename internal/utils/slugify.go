@@ -1,6 +1,22 @@
 package utils
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
+
+func shouldReplaceWithSpace(r rune) bool {
+	if r == ' ' {
+		return true
+	}
+	if r == '-' || r == '.' {
+		return false
+	}
+	if unicode.IsLetter(r) || unicode.IsDigit(r) {
+		return false
+	}
+	return true
+}
 
 func Slugify(input string) string {
 	// Convert the input string into a slice of runes for proper Unicode handling.
@@ -11,10 +27,12 @@ func Slugify(input string) string {
 	for _, r := range runes {
 		if r == '-' {
 			hasHyphen = true
-		} else if r == ' ' {
-			hasSpace = true
 		}
-		// Break early if both are found.
+
+		if shouldReplaceWithSpace(r) {
+			hasSpace = true
+		} // Break early if both are found.
+
 		if hasHyphen && hasSpace {
 			break
 		}
@@ -28,7 +46,7 @@ func Slugify(input string) string {
 	// If there are spaces but no hyphens, replace all spaces with hyphens.
 	if !hasHyphen {
 		for i, r := range runes {
-			if r == ' ' {
+			if shouldReplaceWithSpace(r) {
 				runes[i] = '-'
 			}
 		}
@@ -41,7 +59,7 @@ func Slugify(input string) string {
 	builder.Grow(len(runes)) // Optional: allocate enough capacity
 
 	for i, r := range runes {
-		if r == ' ' {
+		if shouldReplaceWithSpace(r) {
 			prevIsHyphen := i > 0 && runes[i-1] == '-'
 			nextIsHyphen := i < len(runes)-1 && runes[i+1] == '-'
 			if prevIsHyphen || nextIsHyphen {
