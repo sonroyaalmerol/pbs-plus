@@ -6,23 +6,29 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"path"
 	"regexp"
 	"strings"
 
+	"github.com/sirupsen/logrus"
+	"github.com/sonroyaalmerol/pbs-plus/internal/vmware/shared"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
+	virtualDisks "github.com/vmware/virtual-disks/pkg/virtual_disks"
 )
 
 // VMwareSession wraps the govmomi Client.
 type VMwareSession struct {
-	Client *govmomi.Client
+	Client   *govmomi.Client
+	VcURL    string
+	Username string
+	Password string
 }
 
 // NewVMwareSession logs in to vCenter/ESXi and returns a VMwareSession.
@@ -40,7 +46,7 @@ func NewVMwareSession(ctx context.Context, vcURL, username, password string, ins
 		return nil, err
 	}
 
-	return &VMwareSession{Client: client}, nil
+	return &VMwareSession{Client: client, VcURL: vcURL, Username: username, Password: password}, nil
 }
 
 // ListVMs returns all VirtualMachine objects matching "*" in the inventory.
@@ -88,6 +94,20 @@ func (s *VMwareSession) DeleteSnapshot(ctx context.Context, vm *object.VirtualMa
 	return task.Wait(ctx)
 }
 
+func (s *VMwareSession) FindSnapshot(ctx context.Context, vm *object.VirtualMachine, snapshotName string) *types.ManagedObjectReference {
+	var vmMo mo.VirtualMachine
+	pc := property.DefaultCollector(s.Client.Client)
+	err := pc.RetrieveOne(ctx, vm.Reference(), []string{"snapshot"}, &vmMo)
+	if err != nil {
+		return nil
+	}
+	if vmMo.Snapshot == nil {
+		return nil
+	}
+
+	return findSnapshotInTree(vmMo.Snapshot.RootSnapshotList, snapshotName)
+}
+
 // findSnapshotInTree recursively searches for a snapshot by name within a snapshot tree.
 func findSnapshotInTree(snapshots []types.VirtualMachineSnapshotTree, name string) *types.ManagedObjectReference {
 	for _, snap := range snapshots {
@@ -107,32 +127,71 @@ func findSnapshotInTree(snapshots []types.VirtualMachineSnapshotTree, name strin
 //	https://<vcenter>/folder/<fileRelPath>?dcPath=<dcName>&dsName=<dsName>
 //
 // fileRelPath should be the path relative to the datastore root.
-func (s *VMwareSession) DownloadDatastoreFile(ctx context.Context, fileRelPath, dcName, dsName string) (io.ReadCloser, error) {
-	// Use the scheme and host from the vCenter URL (the API URL)
-	baseURL := s.Client.URL()
-	u := &url.URL{
-		Scheme: baseURL.Scheme,
-		Host:   baseURL.Host,
-		// Use the standard folder URL format.
-		Path: path.Join("/folder", fileRelPath),
-	}
-	q := u.Query()
-	q.Set("dcPath", dcName)
-	q.Set("dsName", dsName)
-	u.RawQuery = q.Encode()
 
-	log.Printf("Downloading file from %s", u.String())
-	resp, err := s.Client.Client.Client.Get(u.String())
+// DownloadDatastoreFile downloads a file from a datastore via the vSphere HTTP file access API,
+// and uses govmomi’s datastore browser to obtain metadata (e.g. file size and modification time).
+//
+// fileRelPath is the path relative to the datastore root (e.g. "folder/vm.vmx").
+// dcName is the datacenter name and dsName is the datastore name.
+func (s *VMwareSession) DownloadDatastoreFile(
+	ctx context.Context,
+	fileRelPath, dcName, dsName string,
+) (*shared.DatastoreFileInfo, error) {
+	// Locate datacenter and datastore
+	finder := find.NewFinder(s.Client.Client, true)
+	dc, err := finder.Datacenter(ctx, dcName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot find datacenter %q: %w", dcName, err)
+	}
+	finder.SetDatacenter(dc)
+
+	ds, err := finder.Datastore(ctx, dsName)
+	if err != nil {
+		return nil, fmt.Errorf("cannot find datastore %q: %w", dsName, err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, fmt.Errorf("failed to download file, status code: %d", resp.StatusCode)
+	// Get file metadata directly
+	fileInfo, err := ds.Stat(ctx, fileRelPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	return resp.Body, nil
+	if strings.HasSuffix(fileRelPath, "/") || fileInfo.GetFileInfo().FileSize == 0 {
+		return nil, fmt.Errorf("path appears to be a directory")
+	}
+
+	filename := path.Base(fileRelPath)
+
+	var rc io.ReadCloser
+
+	// Use virtual disk API for VMDK files
+	if path.Ext(filename) == ".vmdk" || snapshotDiffRegex.MatchString(filename) {
+		log.Printf("Opening %s via virtual disk library...", filename)
+		// Build connection parameters for the VDDK. Adjust as needed.
+		params := getDisklibConnectParams(s, fileInfo.GetFileInfo().Path)
+		// Create a logger for the virtual-disk library (using logrus)
+		logger := logrus.New()
+
+		// Open the disk using the high-level API provided by the library.
+		diskRW, err := virtualDisks.Open(params, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open vmdk %s via virtual disk library: %w", filename, err)
+		}
+		rc = newDiskReadCloser(diskRW)
+	} else {
+		// For non-VMDK files (e.g. .ovf, manifest, etc) continue to download using HTTP GET.
+		// Open file for downloading
+		rc, _, err = ds.Download(ctx, fileRelPath, &soap.DefaultDownload)
+		if err != nil {
+			return nil, fmt.Errorf("download failed: %w", err)
+		}
+	}
+
+	return &shared.DatastoreFileInfo{
+		ReadCloser: rc,
+		Size:       fileInfo.GetFileInfo().FileSize,
+		ModTime:    *fileInfo.GetFileInfo().Modification,
+	}, nil
 }
 
 // parseDatastorePath takes a string (e.g. "[datastore1] folder/vm.vmx")

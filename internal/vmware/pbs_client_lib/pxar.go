@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/dchest/siphash"
+	"github.com/sonroyaalmerol/pbs-plus/internal/vmware/shared"
 )
 
 const (
@@ -83,6 +85,8 @@ type GoodByeBST struct {
 	right *GoodByeBST
 }
 
+type VirtualFS map[string]*shared.DatastoreFileInfo
+
 func (bst *GoodByeBST) AddNode(i *GoodByeItem) {
 	if i.hash < bst.self.hash {
 		if bst.left == nil {
@@ -104,8 +108,8 @@ type PXAROutCB func([]byte)
 
 // PXARArchive holds the state for building a PXAR archive.
 type PXARArchive struct {
-	writeCB        PXAROutCB
-	catalogWriteCB PXAROutCB
+	WriteCB        PXAROutCB
+	CatalogWriteCB PXAROutCB
 	buffer         bytes.Buffer
 	pos            uint64
 	ArchiveName    string
@@ -120,8 +124,8 @@ func (a *PXARArchive) Flush() {
 		if n <= 0 {
 			break
 		}
-		if a.writeCB != nil {
-			a.writeCB(b[:n])
+		if a.WriteCB != nil {
+			a.WriteCB(b[:n])
 		}
 		a.pos += uint64(n)
 	}
@@ -187,8 +191,8 @@ func (a *PXARArchive) WriteDir(path, dirname string, toplevel bool) (CatalogDir,
 		}
 		a.buffer.WriteString(dirname)
 		a.buffer.WriteByte(0x00)
-	} else if a.catalogWriteCB != nil {
-		a.catalogWriteCB(catalogMagic)
+	} else if a.CatalogWriteCB != nil {
+		a.CatalogWriteCB(catalogMagic)
 		a.catalogPos = 8
 	}
 
@@ -271,8 +275,8 @@ func (a *PXARArchive) WriteDir(path, dirname string, toplevel bool) (CatalogDir,
 	var catalogOut []byte
 	catalogOut = appendU647bit(catalogOut, uint64(len(tableData)))
 	catalogOut = append(catalogOut, tableData...)
-	if a.catalogWriteCB != nil {
-		a.catalogWriteCB(catalogOut)
+	if a.CatalogWriteCB != nil {
+		a.CatalogWriteCB(catalogOut)
 	}
 	a.catalogPos += uint64(len(catalogOut))
 	a.Flush()
@@ -329,9 +333,9 @@ func (a *PXARArchive) WriteDir(path, dirname string, toplevel bool) (CatalogDir,
 		// Write pointer to catalog position.
 		ptr := make([]byte, 8)
 		binary.LittleEndian.PutUint64(ptr, a.catalogPos)
-		if a.catalogWriteCB != nil {
-			a.catalogWriteCB(catalogPtr)
-			a.catalogWriteCB(ptr)
+		if a.CatalogWriteCB != nil {
+			a.CatalogWriteCB(catalogPtr)
+			a.CatalogWriteCB(ptr)
 		}
 	}
 
@@ -415,5 +419,238 @@ func (a *PXARArchive) WriteFile(path, basename string) (CatalogFile, error) {
 		Name:  basename,
 		MTime: uint64(fi.ModTime().Unix()),
 		Size:  uint64(fi.Size()),
+	}, nil
+}
+
+// WriteVirtualDir writes a directory entry for the (virtual) root folder,
+// processing each file from the provided VirtualFS. Since there is only one
+// folder, no recursion is required.
+func (a *PXARArchive) WriteVirtualDir(vfs VirtualFS, dirname string, toplevel bool) (CatalogDir, error) {
+	// Write a filename entry for non–toplevel directories.
+	if !toplevel {
+		fnameEntry := PXARFilenameEntry{
+			hdr: PXAR_FILENAME,
+			len: uint64(16 + len(dirname) + 1),
+		}
+		if err := a.writeBinary(fnameEntry); err != nil {
+			return CatalogDir{}, err
+		}
+		a.buffer.WriteString(dirname)
+		a.buffer.WriteByte(0x00)
+	} else if a.CatalogWriteCB != nil {
+		// For the toplevel directory, write the catalog magic.
+		a.CatalogWriteCB(catalogMagic)
+		a.catalogPos = 8
+	}
+	a.Flush()
+
+	dirStartPos := a.pos
+
+	// For a virtual folder, we have no on-disk metadata.
+	// We use the current time as the directory's modification time.
+	modTime := time.Now()
+	dirEntry := PXARFileEntry{
+		hdr:   PXAR_ENTRY,
+		len:   56,
+		mode:  IFDIR | 0o777,
+		flags: 0,
+		uid:   1000, // Fixed UID/GID for consistency
+		gid:   1000,
+		mtime: MTime{
+			secs:    uint64(modTime.Unix()),
+			nanos:   0,
+			padding: 0,
+		},
+	}
+	if err := a.writeBinary(dirEntry); err != nil {
+		return CatalogDir{}, fmt.Errorf("writing directory entry: %w", err)
+	}
+	a.Flush()
+
+	// Prepare slices for the catalog and goodbye items.
+	var goodByeItems []GoodByeItem
+	var catalogFiles []CatalogFile
+	var catalogDirs []CatalogDir // (unused because there are no subdirs)
+
+	// Because VirtualFS is a map, sort its keys for deterministic output.
+	var names []string
+	for name := range vfs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		startPos := a.pos
+		catFile, err := a.WriteVirtualFile(vfs[name], name)
+		if err != nil {
+			return CatalogDir{}, fmt.Errorf("writing virtual file %q: %w", name, err)
+		}
+		catalogFiles = append(catalogFiles, catFile)
+		goodByeItems = append(goodByeItems, GoodByeItem{
+			offset: startPos,
+			hash:   siphash.Hash(0x83ac3f1cfbb450db, 0xaa4f1b6879369fbd, []byte(name)),
+			len:    a.pos - startPos,
+		})
+	}
+
+	// Write the catalog table.
+	oldCatalogPos := a.catalogPos
+	var tableData []byte
+	count := uint64(len(catalogFiles) + len(catalogDirs))
+	tableData = appendU647bit(tableData, count)
+	// No directory entries are expected. Write file entries...
+	for _, f := range catalogFiles {
+		tableData = append(tableData, 'f')
+		tableData = appendU647bit(tableData, uint64(len(f.Name)))
+		tableData = append(tableData, []byte(f.Name)...)
+		tableData = appendU647bit(tableData, f.Size)
+		tableData = appendU647bit(tableData, f.MTime)
+	}
+	var catalogOut []byte
+	catalogOut = appendU647bit(catalogOut, uint64(len(tableData)))
+	catalogOut = append(catalogOut, tableData...)
+	if a.CatalogWriteCB != nil {
+		a.CatalogWriteCB(catalogOut)
+	}
+	a.catalogPos += uint64(len(catalogOut))
+	a.Flush()
+
+	// Build goodbye BST tree.
+	sort.Slice(goodByeItems, func(i, j int) bool {
+		return goodByeItems[i].hash < goodByeItems[j].hash
+	})
+	goodByeNew := make([]GoodByeItem, len(goodByeItems))
+	caMakeBst(goodByeItems, &goodByeNew)
+	goodByeItems = goodByeNew
+
+	a.Flush()
+	goodByeStart := a.pos
+
+	if err := a.writeBinary(PXAR_GOODBYE); err != nil {
+		return CatalogDir{}, fmt.Errorf("writing goodbye header: %w", err)
+	}
+	goodByeLen := uint64(16 + 24*uint64(len(goodByeItems)+1))
+	if err := a.writeBinary(goodByeLen); err != nil {
+		return CatalogDir{}, fmt.Errorf("writing goodbye length: %w", err)
+	}
+
+	// Write each goodbye item after adjusting its offset.
+	for i := range goodByeItems {
+		goodByeItems[i].offset = a.pos - goodByeItems[i].offset
+		if err := a.writeBinary(goodByeItems[i]); err != nil {
+			return CatalogDir{}, fmt.Errorf("writing goodbye item: %w", err)
+		}
+	}
+
+	// Write tail marker.
+	tail := GoodByeItem{
+		offset: goodByeStart - dirStartPos,
+		len:    goodByeLen,
+		hash:   PXAR_GOODBYE_TAIL_MARKER,
+	}
+	if err := a.writeBinary(tail); err != nil {
+		return CatalogDir{}, fmt.Errorf("writing goodbye tail: %w", err)
+	}
+	a.Flush()
+
+	// If this is the toplevel directory, write a pointer to the catalog.
+	if toplevel {
+		var ptrTable []byte
+		ptrTable = appendU647bit(ptrTable, 1)
+		ptrTable = append(ptrTable, 'd')
+		ptrTable = appendU647bit(ptrTable, uint64(len(a.ArchiveName)))
+		ptrTable = append(ptrTable, []byte(a.ArchiveName)...)
+		ptrTable = appendU647bit(ptrTable, a.catalogPos-oldCatalogPos)
+		var catalogPtr []byte
+		catalogPtr = appendU647bit(catalogPtr, uint64(len(ptrTable)))
+		catalogPtr = append(catalogPtr, ptrTable...)
+		ptr := make([]byte, 8)
+		binary.LittleEndian.PutUint64(ptr, a.catalogPos)
+		if a.CatalogWriteCB != nil {
+			a.CatalogWriteCB(catalogPtr)
+			a.CatalogWriteCB(ptr)
+		}
+	}
+
+	return CatalogDir{
+		Name: dirname,
+		Pos:  oldCatalogPos,
+	}, nil
+}
+
+// WriteVirtualFile writes a file entry by reading metadata and file data
+// from the given HTTP response.
+func (a *PXARArchive) WriteVirtualFile(resp *shared.DatastoreFileInfo, basename string) (
+	CatalogFile, error,
+) {
+	// Write the filename entry.
+	fnameEntry := PXARFilenameEntry{
+		hdr: PXAR_FILENAME,
+		len: uint64(16 + len(basename) + 1),
+	}
+	if err := a.writeBinary(fnameEntry); err != nil {
+		return CatalogFile{}, err
+	}
+	a.buffer.WriteString(basename)
+	a.buffer.WriteByte(0x00)
+	a.Flush()
+
+	// Determine the modification time from the HTTP header
+	modTime := resp.ModTime
+
+	// Write the file entry.
+	entry := PXARFileEntry{
+		hdr:   PXAR_ENTRY,
+		len:   56,
+		mode:  IFREG | 0o777,
+		flags: 0,
+		uid:   1000,
+		gid:   1000,
+		mtime: MTime{
+			secs:    uint64(modTime.Unix()),
+			nanos:   0,
+			padding: 0,
+		},
+	}
+	if err := a.writeBinary(entry); err != nil {
+		return CatalogFile{}, fmt.Errorf("writing file entry header: %w", err)
+	}
+
+	// Write the payload header.
+	if err := a.writeBinary(PXAR_PAYLOAD); err != nil {
+		return CatalogFile{}, fmt.Errorf("writing payload header: %w", err)
+	}
+
+	// Extract the file size from the HTTP response.
+	size := uint64(resp.Size)
+
+	// The on-disk logic adds 16 bytes to the file size.
+	filesize := size + 16
+	if err := a.writeBinary(filesize); err != nil {
+		return CatalogFile{}, fmt.Errorf("writing payload size: %w", err)
+	}
+	a.Flush()
+
+	// Copy the file data (from resp.Body) in 64KiB chunks.
+	readBuffer := make([]byte, 64*1024)
+	for {
+		n, err := resp.ReadCloser.Read(readBuffer)
+		if n > 0 {
+			a.buffer.Write(readBuffer[:n])
+			a.Flush()
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return CatalogFile{}, fmt.Errorf("reading response body for %q: %w", basename, err)
+		}
+	}
+	a.Flush()
+
+	return CatalogFile{
+		Name:  basename,
+		MTime: uint64(modTime.Unix()),
+		Size:  size,
 	}, nil
 }

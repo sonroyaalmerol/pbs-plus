@@ -17,8 +17,10 @@ require (
 	github.com/kardianos/service v1.2.2
 	github.com/klauspost/compress v1.17.11
 	github.com/mxk/go-vss v1.2.0
+	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
 	github.com/vmware/govmomi v0.48.1
+	github.com/vmware/virtual-disks v0.0.5
 	github.com/willscott/go-nfs v0.0.3
 	github.com/zeebo/xxh3 v1.0.2
 	golang.org/x/crypto v0.32.0
