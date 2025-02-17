@@ -6,7 +6,7 @@ require (
 	github.com/alexflint/go-filemutex v1.3.0
 	github.com/billgraziano/dpapi v0.5.0
 	github.com/coder/websocket v1.8.12
-	github.com/cyphar/filepath-securejoin v0.3.6
+	github.com/cyphar/filepath-securejoin v0.4.1
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/getlantern/systray v1.2.2
 	github.com/go-git/go-billy/v5 v5.6.2
