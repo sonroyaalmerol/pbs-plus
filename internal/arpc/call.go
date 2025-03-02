@@ -183,7 +183,7 @@ func (s *Session) CallMsgWithBuffer(ctx context.Context, method string, payload 
 	remaining := bytesToRead
 
 	// Define your idle timeout (for inactivity).
-	idleTimeout := 10 * time.Second
+	idleTimeout := 30 * time.Second
 
 	// Create a buffered reader to improve efficiency
 	bufReader := bufio.NewReaderSize(stream, 8192)

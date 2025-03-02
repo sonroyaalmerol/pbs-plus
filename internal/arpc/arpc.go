@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +34,9 @@ type Session struct {
 	// Context for coordinating shutdown
 	ctx        context.Context
 	cancelFunc context.CancelFunc
+
+	streamQueue chan *smux.Stream
+	workerPool  *WorkerPool
 }
 
 // NewServerSession creates a new Session for a server connection.
@@ -47,11 +51,19 @@ func NewServerSession(conn net.Conn, config *smux.Config) (*Session, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// For CPU-bound workloads
+	workerPool := NewWorkerPool(ctx, WorkerPoolConfig{
+		Workers:   runtime.GOMAXPROCS(0) * 4, // More workers than cores for I/O tasks
+		QueueSize: 200 * 8,                   // Larger queue for I/O tasks
+	})
+
 	session := &Session{
 		reconnectConfig: nil,
 		reconnectChan:   make(chan struct{}, 1), // Buffer of 1 to prevent blocking
 		ctx:             ctx,
 		cancelFunc:      cancel,
+		workerPool:      workerPool,
 	}
 	session.muxSess.Store(s)
 	session.state.Store(int32(StateConnected))
@@ -71,11 +83,18 @@ func NewClientSession(conn net.Conn, config *smux.Config) (*Session, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+
+	workerPool := NewWorkerPool(ctx, WorkerPoolConfig{
+		Workers:   runtime.GOMAXPROCS(0) * 4,
+		QueueSize: 8,
+	})
+
 	session := &Session{
 		reconnectConfig: nil,
 		reconnectChan:   make(chan struct{}, 1), // Buffer of 1 to prevent blocking
 		ctx:             ctx,
 		cancelFunc:      cancel,
+		workerPool:      workerPool,
 	}
 	session.muxSess.Store(s)
 	session.state.Store(int32(StateConnected))
@@ -83,13 +102,7 @@ func NewClientSession(conn net.Conn, config *smux.Config) (*Session, error) {
 	return session, nil
 }
 
-// defaultSmuxConfig returns a default smux configuration
-func defaultSmuxConfig() *smux.Config {
-	defaults := smux.DefaultConfig()
-	return defaults
-}
-
-// If a stream accept fails and auto‑reconnect is enabled, it attempts to reconnect.
+// Serve accepts streams and processes them using the worker pool instead of creating a new goroutine for each stream
 func (s *Session) Serve(router *Router) error {
 	for {
 		curSession := s.muxSess.Load().(*smux.Session)
@@ -100,14 +113,24 @@ func (s *Session) Serve(router *Router) error {
 			s.state.Store(int32(StateDisconnected))
 			if rc != nil && rc.AutoReconnect {
 				if err2 := s.attemptReconnect(); err2 != nil {
+					s.workerPool.Shutdown() // Shutdown worker pool on error
 					return err2
 				}
 				continue
 			}
+			s.workerPool.Shutdown() // Shutdown worker pool on error
 			return err
 		}
-		go router.ServeStream(stream)
+
+		// Submit the stream to the worker pool instead of spawning a new goroutine
+		s.workerPool.Submit(stream, router)
 	}
+}
+
+// defaultSmuxConfig returns a default smux configuration
+func defaultSmuxConfig() *smux.Config {
+	defaults := smux.DefaultConfig()
+	return defaults
 }
 
 func ConnectToServer(ctx context.Context, serverAddr string, headers http.Header, tlsConfig *tls.Config) (*Session, error) {
