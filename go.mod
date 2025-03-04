@@ -12,6 +12,7 @@ require (
 	github.com/gobwas/glob v0.2.3
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/hanwen/go-fuse/v2 v2.7.2
+	github.com/joetifa2003/mm-go v0.8.0
 	github.com/kardianos/service v1.2.2
 	github.com/mxk/go-vss v1.2.0
 	github.com/stretchr/testify v1.10.0

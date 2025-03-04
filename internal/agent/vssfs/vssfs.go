@@ -1,4 +1,5 @@
 //go:build windows
+// +build windows
 
 package vssfs
 
@@ -41,6 +42,8 @@ type VSSFSServer struct {
 	statFs      StatFS
 	statFsBytes []byte
 }
+
+func (s *VSSFSServer) readDirBulk(dirPath string) ([]byte, error)
 
 func NewVSSFSServer(jobId string, snapshot snapshots.WinVSSSnapshot) *VSSFSServer {
 	ctx, cancel := context.WithCancel(context.Background())

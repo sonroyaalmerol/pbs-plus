@@ -1,4 +1,5 @@
 //go:build windows
+// +build windows
 
 package vssfs
 
@@ -8,9 +9,16 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/valyala/bytebufferpool"
+	"github.com/joetifa2003/mm-go/allocator"
+	"github.com/joetifa2003/mm-go/vector"
 	"golang.org/x/sys/windows"
 )
+
+/*
+#include <stdlib.h>
+#include <string.h>
+*/
+import "C"
 
 type FILE_ID_BOTH_DIR_INFO struct {
 	NextEntryOffset uint32
@@ -112,23 +120,19 @@ func (s *VSSFSServer) readDirBulk(dirPath string) ([]byte, error) {
 	}
 	defer windows.CloseHandle(handle)
 
+	// Create a manual memory allocator
+	alloc := allocator.NewC()
+	defer alloc.Destroy()
+
+	// Use vector instead of slice for entries
+	entries := vector.New[*VSSDirEntry](alloc)
+	defer entries.Free()
+
 	const initialBufSize = 64 * 1024
-	buf := bytebufferpool.Get()
-	defer func() {
-		// Ensure the buffer is returned to the pool only if it's not nil
-		if buf != nil {
-			bytebufferpool.Put(buf)
-		}
-	}()
+	// Allocate buffer manually
+	buffer := allocator.AllocMany[byte](alloc, initialBufSize)
+	defer allocator.FreeMany(alloc, buffer)
 
-	// Ensure the buffer has enough capacity
-	if cap(buf.B) < initialBufSize {
-		buf.B = make([]byte, initialBufSize)
-	} else {
-		buf.B = buf.B[:initialBufSize]
-	}
-
-	var entries ReadDirEntries
 	var usingFull bool
 	infoClass := windows.FileIdBothDirectoryInfo
 
@@ -136,15 +140,14 @@ func (s *VSSFSServer) readDirBulk(dirPath string) ([]byte, error) {
 		err = windows.GetFileInformationByHandleEx(
 			handle,
 			uint32(infoClass),
-			&buf.B[0],
-			uint32(buf.Len()),
+			&buffer[0],
+			uint32(len(buffer)),
 		)
 
 		if err != nil {
 			var errno syscall.Errno
 			if errors.As(err, &errno) {
 				if errno == windows.ERROR_INVALID_PARAMETER && !usingFull {
-					// Switch to FileFullDirectoryInfo
 					infoClass = windows.FileFullDirectoryInfo
 					usingFull = true
 					continue
@@ -158,12 +161,12 @@ func (s *VSSFSServer) readDirBulk(dirPath string) ([]byte, error) {
 
 		// Process entries in the buffer
 		offset := 0
-		for offset < buf.Len() {
+		for offset < len(buffer) {
 			var info *FILE_ID_BOTH_DIR_INFO
 			if usingFull {
-				info = (*FILE_ID_BOTH_DIR_INFO)(unsafe.Pointer(&buf.B[offset]))
+				info = (*FILE_ID_BOTH_DIR_INFO)(unsafe.Pointer(&buffer[offset]))
 			} else {
-				info = (*FILE_ID_BOTH_DIR_INFO)(unsafe.Pointer(&buf.B[offset]))
+				info = (*FILE_ID_BOTH_DIR_INFO)(unsafe.Pointer(&buffer[offset]))
 			}
 
 			nameLen := int(info.FileNameLength) / 2
@@ -174,7 +177,11 @@ func (s *VSSFSServer) readDirBulk(dirPath string) ([]byte, error) {
 
 				if name != "." && name != ".." && !skipPathWithAttributes(info.FileAttributes) {
 					mode := windowsAttributesToFileMode(info.FileAttributes)
-					entries = append(entries, &VSSDirEntry{Name: name, Mode: mode})
+					// Allocate VSSDirEntry manually
+					entry := allocator.Alloc[VSSDirEntry](alloc)
+					entry.Name = name
+					entry.Mode = mode
+					entries.Push(entry)
 				}
 			}
 
@@ -185,5 +192,11 @@ func (s *VSSFSServer) readDirBulk(dirPath string) ([]byte, error) {
 		}
 	}
 
-	return entries.MarshalMsg(nil)
+	// Convert entries to slice for marshaling
+	entriesSlice := make(ReadDirEntries, entries.Len())
+	for i := 0; i < entries.Len(); i++ {
+		entriesSlice[i] = entries.At(i)
+	}
+
+	return entriesSlice.MarshalMsg(nil)
 }
