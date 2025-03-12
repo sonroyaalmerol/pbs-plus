@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 	"unsafe"
 
 	"github.com/Microsoft/go-winio"
@@ -138,27 +139,48 @@ func (s *AgentFSServer) handleOpenFile(req arpc.Request) (arpc.Response, error) 
 	}, nil
 }
 
+// defaultErrorResponse generates a default response with 0 file size and maximum permissions (inaccessible).
+func (s *AgentFSServer) defaultAttrErrorResponse(path string, err error) arpc.Response {
+	name := filepath.Base(path)
+
+	info := types.AgentFileInfo{
+		Name:    name,
+		Size:    0,           // 0 file size
+		Mode:    0o000,       // Maximum permission (inaccessible)
+		ModTime: time.Time{}, // Zero time
+		IsDir:   false,       // Not a directory
+		Blocks:  0,           // No blocks
+	}
+
+	syslog.L.Error(err).WithMessage("invalid stat op").WithField("path", path).Write()
+
+	data, _ := info.Encode() // Encoding should not fail for default values
+	return arpc.Response{
+		Status: 200,
+		Data:   data,
+	}
+}
+
 func (s *AgentFSServer) handleAttr(req arpc.Request) (arpc.Response, error) {
 	var payload types.StatReq
 	if err := payload.Decode(req.Payload); err != nil {
 		return arpc.Response{}, err
 	}
-
 	fullPath, err := s.abs(payload.Path)
 	if err != nil {
-		return arpc.Response{}, err
+		return s.defaultAttrErrorResponse(payload.Path, err), nil
 	}
 
 	rawInfo, err := os.Stat(fullPath)
 	if err != nil {
-		return arpc.Response{}, err
+		return s.defaultAttrErrorResponse(payload.Path, err), nil
 	}
 
 	blocks := uint64(0)
 	if !rawInfo.IsDir() {
 		file, err := os.Open(fullPath)
 		if err != nil {
-			return arpc.Response{}, err
+			return s.defaultAttrErrorResponse(payload.Path, err), nil
 		}
 		defer file.Close()
 
@@ -187,7 +209,7 @@ func (s *AgentFSServer) handleAttr(req arpc.Request) (arpc.Response, error) {
 
 	data, err := info.Encode()
 	if err != nil {
-		return arpc.Response{}, err
+		return s.defaultAttrErrorResponse(payload.Path, err), nil
 	}
 
 	return arpc.Response{
