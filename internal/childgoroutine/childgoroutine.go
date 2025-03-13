@@ -3,6 +3,7 @@ package childgoroutine
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 
 	"github.com/xtaci/smux"
@@ -72,15 +73,19 @@ func Go(name string, args string) (*Child, error) {
 	// Spawn the child process. Pass in:
 	//   [os.Stdin, os.Stdout, os.Stderr, child's read endpoint, child's write endpoint]
 	files := []*os.File{os.Stdin, os.Stdout, os.Stderr, childRead, childWrite}
-	proc, err := os.StartProcess(
-		exe,
-		append([]string{exe}, cmdArgs...),
-		&os.ProcAttr{
-			Dir:   "",
-			Env:   os.Environ(),
-			Files: files,
-		},
-	)
+
+	// Use exec.Command which is well supported on Windows.
+	cmd := exec.Command(exe, cmdArgs...)
+	cmd.Dir = ""
+	cmd.Env = os.Environ()
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	// Pass the extra files. These will become FDs 3 and 4 in the child process.
+	cmd.ExtraFiles = files[3:]
+
+	// Start the child process.
+	err = cmd.Start()
 	// The parent's copies of the child's pipe endpoints are no longer needed.
 	childRead.Close()
 	childWrite.Close()
@@ -89,13 +94,15 @@ func Go(name string, args string) (*Child, error) {
 		session.Close()
 		return nil, fmt.Errorf("failed to start child process: %v", err)
 	}
-	err = proc.Release()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to release child process: %v\n", err)
+
+	// Detach from the child process.
+	if err := cmd.Process.Release(); err != nil {
+		fmt.Fprintf(os.Stderr,
+			"warning: failed to release child process: %v\n", err)
 	}
 
 	return &Child{
-		Process: proc,
+		Process: cmd.Process,
 		Mux:     session,
 	}, nil
 }
