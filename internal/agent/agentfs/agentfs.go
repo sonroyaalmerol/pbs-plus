@@ -43,6 +43,7 @@ func NewAgentFSServer(jobId string, snapshot snapshots.Snapshot) *AgentFSServer 
 		child, err = childgoroutine.Go("unsafefs_readat", fmt.Sprintf("%d", allocGranularity))
 		if err != nil {
 			cancel()
+			syslog.L.Error(err).WithField("jobId", jobId).Write()
 			return nil
 		}
 	}
