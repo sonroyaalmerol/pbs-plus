@@ -4,14 +4,12 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"sync"
 
 	"github.com/xtaci/smux"
 )
 
 // registry maps names to functions to run in the child process.
 var registry = make(map[string]func(string))
-var registryMux sync.Mutex
 
 // muxSession holds the smux session in child mode.
 var muxSession *smux.Session
@@ -27,9 +25,7 @@ type Child struct {
 // Because the child re‑executes your binary, registration must be done in both
 // parent and child.
 func Register(name string, f func(string)) {
-	registryMux.Lock()
 	registry[name] = f
-	registryMux.Unlock()
 }
 
 // ---------------------------------------------------------------------
@@ -110,9 +106,7 @@ func runChildMode() {
 				"child mode specified but no child name provided")
 			os.Exit(1)
 		}
-		registryMux.Lock()
 		f, ok := registry[childName]
-		registryMux.Unlock()
 		if !ok {
 			fmt.Fprintf(os.Stderr, "no registered function for child name: %s\n", childName)
 			os.Exit(1)

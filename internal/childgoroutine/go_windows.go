@@ -77,13 +77,6 @@ func Go(name string, args string) (*Child, error) {
 		childWrite.Close()
 		return nil, fmt.Errorf("failed to start child process: %v", err)
 	}
-	// The parent's copies of the child's pipe endpoints are no longer needed.
-	childRead.Close()
-	childWrite.Close()
-
-	if err = cmd.Process.Release(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to release child process: %v\n", err)
-	}
 
 	return &Child{
 		Process: cmd.Process,
