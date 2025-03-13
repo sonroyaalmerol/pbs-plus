@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/xtaci/smux"
 )
@@ -20,31 +19,6 @@ var muxSession *smux.Session
 type Child struct {
 	Process *os.Process
 	Mux     *smux.Session
-}
-
-// ---------------------------------------------------------------------
-// helper function: childExecutable
-//
-// When running in tests on Windows the currently running binary is a
-// test binary (ending in ".test.exe") which cannot be re‑executed with
-// inherited handles. Instead, you must provide a separate helper binary.
-// Set the environment variable CHILD_PROCESS_BIN to the path of a helper
-// binary that is functionally equivalent.
-// ---------------------------------------------------------------------
-
-func childExecutable() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	if strings.HasSuffix(exe, ".test.exe") {
-		helper := os.Getenv("CHILD_PROCESS_BIN")
-		if helper == "" {
-			return "", fmt.Errorf("running in test mode: set CHILD_PROCESS_BIN environment variable to a valid helper binary path")
-		}
-		return helper, nil
-	}
-	return exe, nil
 }
 
 // Register makes a function available for running in a child process.

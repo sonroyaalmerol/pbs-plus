@@ -32,7 +32,7 @@ func Go(name string, args string) (*Child, error) {
 	}
 
 	// Use childExecutable() to decide which binary to spawn.
-	exe, err := childExecutable()
+	exe, err := os.Executable()
 	if err != nil {
 		session.Close()
 		return nil, err
