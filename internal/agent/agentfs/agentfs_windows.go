@@ -18,8 +18,6 @@ import (
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"github.com/xtaci/smux"
 	"golang.org/x/sys/windows"
-
-	_ "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe/register"
 )
 
 type FileHandle struct {
