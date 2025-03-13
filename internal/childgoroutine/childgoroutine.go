@@ -101,9 +101,9 @@ func runChildMode() {
 			}
 			muxSession = mux
 		}
+		fmt.Fprintf(os.Stderr, "child mode: registry keys: %+v\n", registry)
 		if childName == "" {
-			fmt.Fprintln(os.Stderr,
-				"child mode specified but no child name provided")
+			fmt.Fprintln(os.Stderr, "child mode specified but no child name provided")
 			os.Exit(1)
 		}
 		f, ok := registry[childName]
