@@ -29,7 +29,7 @@ jobs:
         shell: pwsh
         run: |
           # Build the helper binary used for re‐exec in tests.
-          go build -o childhelper.exe ./cmd/childhelper
+          go build -o childhelper.exe ./cmd/windows_agent
           
           # Resolve the full path of the helper binary.
           $childHelper = (Resolve-Path childhelper.exe).Path
