@@ -6,19 +6,38 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"unsafe"
 
 	"github.com/Microsoft/go-winio"
 	"github.com/pkg/errors"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/types"
+	unsafefs "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe"
 	"github.com/sonroyaalmerol/pbs-plus/internal/arpc"
 	binarystream "github.com/sonroyaalmerol/pbs-plus/internal/arpc/binary"
+	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"github.com/xtaci/smux"
 	"golang.org/x/sys/windows"
 )
+
+func init() {
+	childgoroutine.Register("unsafefs_readat", func(args string) {
+		alloc, err := strconv.Atoi(args)
+		if err != nil {
+			alloc = 0
+		}
+		server := unsafefs.Initialize(uint32(alloc))
+		if server != nil {
+			if err := server.ServeReadAt(); err != nil {
+				log.Printf("error serving readat: %v", err)
+			}
+		}
+	})
+}
 
 type FileHandle struct {
 	handle   windows.Handle

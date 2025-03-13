@@ -108,8 +108,7 @@ func runChildMode() {
 		}
 		f, ok := registry[childName]
 		if !ok {
-			fmt.Fprintf(os.Stderr,
-				"no registered function for child name: %s\n", childName)
+			fmt.Fprintf(os.Stderr, "no registered function for child name: %s\n", childName)
 			os.Exit(1)
 		}
 		// Run the registered child function.
