@@ -4,23 +4,21 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/kardianos/service"
-	unsafefs "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe"
-	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine"
 	"github.com/sonroyaalmerol/pbs-plus/internal/store/constants"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+
+	_ "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe/register"
 )
 
 var Version = "v0.0.0"
@@ -28,31 +26,6 @@ var (
 	mutex  sync.Mutex
 	handle windows.Handle
 )
-
-func init() {
-	// Register the function under "unsafefs_readat". Note that we now obtain the smux session outside unsafefs.
-	childgoroutine.Register("unsafefs_readat", func(args string) {
-		alloc, err := strconv.Atoi(args)
-		if err != nil {
-			alloc = 0
-		}
-		// Obtain the session from childgoroutine.
-		session := childgoroutine.SMux()
-		if session == nil {
-			log.Printf("failed to obtain smux session")
-			return
-		}
-		// Initialize the server using the obtained session.
-		server := unsafefs.Initialize(session, uint32(alloc))
-		if server != nil {
-			if err := server.ServeReadAt(); err != nil {
-				log.Printf("error serving readat: %v", err)
-			}
-		} else {
-			log.Printf("unsafefs.Initialize returned nil")
-		}
-	})
-}
 
 // watchdogService wraps the original service and adds resilience
 type watchdogService struct {
