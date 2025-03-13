@@ -28,16 +28,5 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          # Build the helper binary used for re‐exec in tests.
-          go build -o childhelper.exe ./cmd/windows_agent
-          
-          # Resolve the full path of the helper binary.
-          $childHelper = (Resolve-Path childhelper.exe).Path
-          Write-Host "Using child helper binary at: $childHelper"
-          
-          # Set the environment variable so that the library uses the helper binary.
-          $env:CHILD_PROCESS_BIN = $childHelper
-          
-          # Run the tests with the necessary Windows build tag.
-          go test -v -race ./internal/agent/agentfs/... -tags=windows -count=1 -timeout 3m
+          go test -v -race ./internal/agent/agentfs/... -tags=windows -count=1 -timeout 1m
 

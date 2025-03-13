@@ -60,12 +60,14 @@ func Go(name string, args string) (*Child, error) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	// Pass the extra files (they become FDs 3 and 4 in the child process).
-	cmd.ExtraFiles = []*os.File{childRead, childWrite}
 
 	// On Windows, it can help to set appropriate creation flags.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		AdditionalInheritedHandles: []syscall.Handle{
+			syscall.Handle(childRead.Fd()),
+			syscall.Handle(childWrite.Fd()),
+		},
 	}
 
 	// Start the child process.
