@@ -3,8 +3,8 @@ package childgoroutine
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
+	"strings"
 
 	"github.com/xtaci/smux"
 )
@@ -22,89 +22,36 @@ type Child struct {
 	Mux     *smux.Session
 }
 
+// ---------------------------------------------------------------------
+// helper function: childExecutable
+//
+// When running in tests on Windows the currently running binary is a
+// test binary (ending in ".test.exe") which cannot be re‑executed with
+// inherited handles. Instead, you must provide a separate helper binary.
+// Set the environment variable CHILD_PROCESS_BIN to the path of a helper
+// binary that is functionally equivalent.
+// ---------------------------------------------------------------------
+
+func childExecutable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if strings.HasSuffix(exe, ".test.exe") {
+		helper := os.Getenv("CHILD_PROCESS_BIN")
+		if helper == "" {
+			return "", fmt.Errorf("running in test mode: set CHILD_PROCESS_BIN environment variable to a valid helper binary path")
+		}
+		return helper, nil
+	}
+	return exe, nil
+}
+
 // Register makes a function available for running in a child process.
 // Because the child re‑executes your binary, registration must be done in both
 // parent and child.
 func Register(name string, f func(string)) {
 	registry[name] = f
-}
-
-// ---------------------------------------------------------------------
-// Parent-Side: Go()
-// ---------------------------------------------------------------------
-
-// Go spawns a child process that will run the registered function given by name.
-// It creates a full-duplex IPC channel over two pipes and wraps it in a smux session
-// (acting as the smux server). The child process will receive its endpoints as
-// inherited file descriptors, reassemble its net.Conn, and then wrap it with smux.Client.
-func Go(name string, args string) (*Child, error) {
-	parentConn, childRead, childWrite, err := createDuplexPipe()
-	if err != nil {
-		return nil, err
-	}
-	// Wrap the parent's connection in a smux server session.
-	session, err := smux.Server(parentConn, smux.DefaultConfig())
-	if err != nil {
-		parentConn.Close()
-		return nil, fmt.Errorf("failed to create smux server: %v", err)
-	}
-
-	exe, err := os.Executable()
-	if err != nil {
-		session.Close()
-		return nil, fmt.Errorf("failed to get executable: %v", err)
-	}
-
-	// Pass command-line flags so that the child knows:
-	//   • It is running in child mode.
-	//   • Which registered function to run.
-	//   • The file-descriptor numbers for its IPC channel.
-	//
-	// The ordering of Files in os.StartProcess causes the inherited files to be
-	// assigned to FDs 3 and 4 in the child (after stdin=0, stdout=1, stderr=2).
-	cmdArgs := []string{
-		"--child",
-		"--childName", name,
-		"--ipcReadFD", "3",
-		"--ipcWriteFD", "4",
-		"--args", args,
-	}
-
-	// Spawn the child process. Pass in:
-	//   [os.Stdin, os.Stdout, os.Stderr, child's read endpoint, child's write endpoint]
-	files := []*os.File{os.Stdin, os.Stdout, os.Stderr, childRead, childWrite}
-
-	// Use exec.Command which is well supported on Windows.
-	cmd := exec.Command(exe, cmdArgs...)
-	cmd.Dir = ""
-	cmd.Env = os.Environ()
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	// Pass the extra files. These will become FDs 3 and 4 in the child process.
-	cmd.ExtraFiles = files[3:]
-
-	// Start the child process.
-	err = cmd.Start()
-	// The parent's copies of the child's pipe endpoints are no longer needed.
-	childRead.Close()
-	childWrite.Close()
-
-	if err != nil {
-		session.Close()
-		return nil, fmt.Errorf("failed to start child process: %v", err)
-	}
-
-	// Detach from the child process.
-	if err := cmd.Process.Release(); err != nil {
-		fmt.Fprintf(os.Stderr,
-			"warning: failed to release child process: %v\n", err)
-	}
-
-	return &Child{
-		Process: cmd.Process,
-		Mux:     session,
-	}, nil
 }
 
 // ---------------------------------------------------------------------
