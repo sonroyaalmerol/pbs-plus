@@ -10,14 +10,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/types"
+	unsafefs "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/snapshots"
 	"github.com/sonroyaalmerol/pbs-plus/internal/arpc"
+	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -131,6 +134,27 @@ func dumpHandleMap(server *AgentFSServer) string {
 	})
 
 	return info.String()
+}
+
+func TestMain(m *testing.M) {
+	// Register the child handler so that even when the test binary reexecutes in child mode,
+	// it contains the registration.
+	childgoroutine.Register("unsafefs_readat", func(args string) {
+		alloc, err := strconv.Atoi(args)
+		if err != nil {
+			alloc = 0
+		}
+		// Obtain the smux session from childgoroutine (this should be initialized when running in child mode)
+		session := childgoroutine.SMux()
+		if session == nil {
+			return
+		}
+		server := unsafefs.Initialize(session, uint32(alloc))
+		if server != nil {
+			_ = server.ServeReadAt()
+		}
+	})
+	os.Exit(m.Run())
 }
 
 func TestAgentFSServer(t *testing.T) {
