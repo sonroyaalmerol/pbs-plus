@@ -30,17 +30,26 @@ var (
 )
 
 func init() {
-	log.Printf("test: init has been executed")
+	// Register the function under "unsafefs_readat". Note that we now obtain the smux session outside unsafefs.
 	childgoroutine.Register("unsafefs_readat", func(args string) {
 		alloc, err := strconv.Atoi(args)
 		if err != nil {
 			alloc = 0
 		}
-		server := unsafefs.Initialize(uint32(alloc))
+		// Obtain the session from childgoroutine.
+		session := childgoroutine.SMux()
+		if session == nil {
+			log.Printf("failed to obtain smux session")
+			return
+		}
+		// Initialize the server using the obtained session.
+		server := unsafefs.Initialize(session, uint32(alloc))
 		if server != nil {
 			if err := server.ServeReadAt(); err != nil {
 				log.Printf("error serving readat: %v", err)
 			}
+		} else {
+			log.Printf("unsafefs.Initialize returned nil")
 		}
 	})
 }

@@ -11,7 +11,6 @@ import (
 
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/types"
 	binarystream "github.com/sonroyaalmerol/pbs-plus/internal/arpc/binary"
-	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"github.com/xtaci/smux"
 	"golang.org/x/sys/windows"
@@ -31,14 +30,13 @@ type UnsafeFSServer struct {
 	session          *smux.Session
 }
 
-func Initialize(allocGranularity uint32) *UnsafeFSServer {
+func Initialize(session *smux.Session, allocGranularity uint32) *UnsafeFSServer {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	if allocGranularity == 0 {
 		allocGranularity = 65536 // 64 KB usually
 	}
 
-	session := childgoroutine.SMux()
 	if session == nil {
 		cancel()
 		return nil
@@ -47,7 +45,7 @@ func Initialize(allocGranularity uint32) *UnsafeFSServer {
 	s := &UnsafeFSServer{
 		ctx:              ctx,
 		ctxCancel:        cancel,
-		allocGranularity: uint32(allocGranularity),
+		allocGranularity: allocGranularity,
 		session:          session,
 	}
 
