@@ -4,15 +4,18 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/kardianos/service"
+	unsafefs "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe"
 	"github.com/sonroyaalmerol/pbs-plus/internal/store/constants"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"golang.org/x/sys/windows"
@@ -110,6 +113,26 @@ func main() {
 			os.Exit(1)
 		}
 	}()
+
+	if len(os.Args) > 1 && os.Args[1] == "__fs-unsafe" {
+		alloc := 0
+		if len(os.Args) > 2 {
+			var err error
+			alloc, err = strconv.Atoi(os.Args[2])
+			if err != nil {
+				alloc = 0
+			}
+		}
+
+		server := unsafefs.Initialize(uint32(alloc))
+		if server != nil {
+			if err := server.ServeReadAt(); err != nil {
+				log.Printf("error serving readat: %v", err)
+			}
+		}
+
+		os.Exit(0)
+	}
 
 	constants.Version = Version
 

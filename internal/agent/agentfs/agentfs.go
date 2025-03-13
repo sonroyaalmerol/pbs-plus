@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/types"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/snapshots"
 	"github.com/sonroyaalmerol/pbs-plus/internal/arpc"
+	"github.com/sonroyaalmerol/pbs-plus/internal/arpc/forkcomm"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"github.com/sonroyaalmerol/pbs-plus/internal/utils/idgen"
 	"github.com/sonroyaalmerol/pbs-plus/internal/utils/safemap"
@@ -19,6 +21,7 @@ type AgentFSServer struct {
 	ctxCancel        context.CancelFunc
 	jobId            string
 	snapshot         snapshots.Snapshot
+	unsafeExecutor   *forkcomm.Session
 	handleIdGen      *idgen.IDGenerator
 	handles          *safemap.Map[uint64, *FileHandle]
 	arpcRouter       *arpc.Router
@@ -34,6 +37,21 @@ func NewAgentFSServer(jobId string, snapshot snapshots.Snapshot) *AgentFSServer 
 		allocGranularity = 65536 // 64 KB usually
 	}
 
+	var child *forkcomm.Session
+	if runtime.GOOS == "windows" {
+		currExec, err := os.Executable()
+		if err != nil {
+			cancel()
+			return nil
+		}
+
+		child, err = forkcomm.CreateChildProcess(ctx, currExec, []string{"__fs-unsafe", fmt.Sprintf("%d", allocGranularity)})
+		if err != nil {
+			cancel()
+			return nil
+		}
+	}
+
 	s := &AgentFSServer{
 		snapshot:         snapshot,
 		jobId:            jobId,
@@ -42,6 +60,7 @@ func NewAgentFSServer(jobId string, snapshot snapshots.Snapshot) *AgentFSServer 
 		ctxCancel:        cancel,
 		handleIdGen:      idgen.NewIDGenerator(),
 		allocGranularity: uint32(allocGranularity),
+		unsafeExecutor:   child,
 	}
 
 	if err := s.initializeStatFS(); err != nil && syslog.L != nil {
@@ -90,6 +109,10 @@ func (s *AgentFSServer) Close() {
 		r.CloseHandle(s.jobId + "/Lseek")
 		r.CloseHandle(s.jobId + "/Close")
 		r.CloseHandle(s.jobId + "/StatFS")
+	}
+
+	if s.unsafeExecutor != nil {
+		s.unsafeExecutor.Close()
 	}
 
 	s.closeFileHandles()

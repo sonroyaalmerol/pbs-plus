@@ -310,3 +310,32 @@ func GetWinACLs(filePath string) (string, string, []types.WinACL, error) {
 	}
 	return owner, group, winAcls, nil
 }
+
+func createFileInheritable(
+	path string,
+	desiredAccess uint32,
+	shareMode uint32,
+	creationDisposition uint32,
+	flagsAndAttributes uint32,
+) (windows.Handle, error) {
+	// Prepare the security attributes with inheritance enabled.
+	sa := windows.SecurityAttributes{
+		Length:        uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+		InheritHandle: 1, // non-zero means TRUE
+	}
+
+	handle, err := windows.CreateFile(
+		windows.StringToUTF16Ptr(path),
+		desiredAccess,
+		shareMode,
+		&sa,
+		creationDisposition,
+		flagsAndAttributes,
+		0,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create file: %w", err)
+	}
+
+	return handle, nil
+}

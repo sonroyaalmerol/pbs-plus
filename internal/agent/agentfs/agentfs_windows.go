@@ -293,7 +293,6 @@ func (s *AgentFSServer) handleReadAt(req arpc.Request) (arpc.Response, error) {
 	if err := payload.Decode(req.Payload); err != nil {
 		return arpc.Response{}, err
 	}
-
 	// Validate the payload parameters.
 	if payload.Length < 0 {
 		return arpc.Response{}, fmt.Errorf("invalid negative length requested: %d", payload.Length)
@@ -328,74 +327,59 @@ func (s *AgentFSServer) handleReadAt(req arpc.Request) (arpc.Response, error) {
 		payload.Length = int(fh.fileSize - payload.Offset)
 	}
 
-	// Align the offset down to the nearest multiple of the allocation granularity.
-	alignedOffset := payload.Offset - (payload.Offset % int64(s.allocGranularity))
-	offsetDiff := int(payload.Offset - alignedOffset)
-	viewSize := uintptr(payload.Length + offsetDiff)
-
-	// Attempt to create a file mapping.
-	h, err := windows.CreateFileMapping(fh.handle, nil, windows.PAGE_READONLY, 0, 0, nil)
-	if err == nil {
-		// Map the requested view.
-		addr, err := windows.MapViewOfFile(
-			h,
-			windows.FILE_MAP_READ,
-			uint32(alignedOffset>>32),
-			uint32(alignedOffset&0xFFFFFFFF),
-			viewSize,
-		)
-		if err == nil {
-			ptr := (*byte)(unsafe.Pointer(addr))
-			data := unsafe.Slice(ptr, viewSize)
-			// Verify we’re not slicing outside the allocated region.
-			if offsetDiff+payload.Length > len(data) {
-				syslog.L.Error(fmt.Errorf(
-					"invalid slice bounds: offsetDiff=%d, payload.Length=%d, data len=%d",
-					offsetDiff, payload.Length, len(data)),
-				).WithMessage("invalid file mapping boundaries").Write()
-
-				windows.UnmapViewOfFile(addr)
-				windows.CloseHandle(h)
-				return arpc.Response{}, fmt.Errorf("invalid file mapping boundaries")
-			}
-			result := data[offsetDiff : offsetDiff+payload.Length]
-			reader := bytes.NewReader(result)
-
-			streamCallback := func(stream *smux.Stream) {
-				// Ensure we free up resources once streaming is done.
-				defer func() {
-					windows.UnmapViewOfFile(addr)
-					windows.CloseHandle(h)
-				}()
-				if err := binarystream.SendDataFromReader(reader, payload.Length, stream); err != nil {
-					syslog.L.Error(err).WithMessage("failed sending data from reader via binary stream").Write()
-				}
-			}
-
-			return arpc.Response{
-				Status:    213,
-				RawStream: streamCallback,
-			}, nil
-		}
-		// If mapping fails, clean up.
-		windows.CloseHandle(h)
-	}
-
-	// Fallback to using the OVERLAPPED ReadFile method.
-	var overlapped windows.Overlapped
-	overlapped.Offset = uint32(payload.Offset & 0xFFFFFFFF)
-	overlapped.OffsetHigh = uint32(payload.Offset >> 32)
-
-	buffer := make([]byte, payload.Length)
-	var bytesRead uint32
-	err = windows.ReadFile(fh.handle, buffer, &bytesRead, &overlapped)
+	// Open a handle to the target process with the PROCESS_DUP_HANDLE right
+	targetProcess, err := windows.OpenProcess(
+		windows.PROCESS_DUP_HANDLE,
+		false,
+		uint32(s.unsafeExecutor.GetPID()),
+	)
 	if err != nil {
-		return arpc.Response{}, mapWinError(err, "handleReadAt ReadFile (OVERLAPPED fallback)")
+		return arpc.Response{}, os.ErrInvalid
+	}
+	defer windows.CloseHandle(targetProcess)
+
+	var dupHandle windows.Handle
+	// Duplicate the handle from our process into the target process
+	err = windows.DuplicateHandle(
+		windows.CurrentProcess(),
+		fh.handle,
+		targetProcess,
+		&dupHandle,
+		0,     // requested access (0 means same access as the source handle)
+		false, // do not make the handle inheritable
+		windows.DUPLICATE_SAME_ACCESS,
+	)
+	if err != nil {
+		return arpc.Response{}, os.ErrInvalid
 	}
 
-	reader := bytes.NewReader(buffer[:bytesRead])
+	childStream, err := s.unsafeExecutor.Pipe.OpenStream()
+	if err != nil {
+		return arpc.Response{}, os.ErrInvalid
+	}
+
+	unsafeReq := types.UnsafeReq{
+		Handle:  uintptr(dupHandle),
+		Request: req.Payload,
+	}
+
+	unsafeReqBytes, err := unsafeReq.Encode()
+	if err != nil {
+		return arpc.Response{}, os.ErrInvalid
+	}
+
+	_, err = childStream.Write(unsafeReqBytes)
+	if err != nil {
+		return arpc.Response{}, os.ErrInvalid
+	}
+
 	streamCallback := func(stream *smux.Stream) {
-		if err := binarystream.SendDataFromReader(reader, int(bytesRead), stream); err != nil {
+		// Ensure we free up resources once streaming is done.
+		defer func() {
+			windows.CloseHandle(dupHandle)
+		}()
+
+		if err := binarystream.SendDataFromReader(childStream, payload.Length, stream); err != nil {
 			syslog.L.Error(err).WithMessage("failed sending data from reader via binary stream").Write()
 		}
 	}
