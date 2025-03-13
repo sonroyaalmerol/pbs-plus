@@ -30,6 +30,7 @@ var (
 )
 
 func init() {
+	log.Printf("test: init has been executed")
 	childgoroutine.Register("unsafefs_readat", func(args string) {
 		alloc, err := strconv.Atoi(args)
 		if err != nil {
