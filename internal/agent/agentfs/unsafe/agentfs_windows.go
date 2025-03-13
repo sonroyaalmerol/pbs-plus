@@ -9,7 +9,7 @@ import (
 
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/types"
 	binarystream "github.com/sonroyaalmerol/pbs-plus/internal/arpc/binary"
-	"github.com/sonroyaalmerol/pbs-plus/internal/arpc/forkcomm"
+	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"github.com/xtaci/smux"
 	"golang.org/x/sys/windows"
@@ -26,7 +26,7 @@ type UnsafeFSServer struct {
 	ctx              context.Context
 	ctxCancel        context.CancelFunc
 	allocGranularity uint32
-	session          *forkcomm.Session
+	session          *smux.Session
 }
 
 func Initialize(allocGranularity uint32) *UnsafeFSServer {
@@ -36,8 +36,8 @@ func Initialize(allocGranularity uint32) *UnsafeFSServer {
 		allocGranularity = 65536 // 64 KB usually
 	}
 
-	session, err := forkcomm.GetParentProcess()
-	if err != nil {
+	session := childgoroutine.SMux()
+	if session == nil {
 		cancel()
 		return nil
 	}
@@ -54,7 +54,7 @@ func Initialize(allocGranularity uint32) *UnsafeFSServer {
 
 func (s *UnsafeFSServer) ServeReadAt() error {
 	for {
-		stream, err := s.session.Pipe.AcceptStream()
+		stream, err := s.session.AcceptStream()
 		if err != nil {
 			return err
 		}
@@ -132,6 +132,7 @@ func (s *UnsafeFSServer) handleReadAt(stream *smux.Stream) error {
 			}()
 			if err := binarystream.SendDataFromReader(reader, payload.Length, stream); err != nil {
 				syslog.L.Error(err).WithMessage("failed sending data from reader via binary stream").Write()
+				return err
 			}
 
 			return nil
@@ -155,6 +156,7 @@ func (s *UnsafeFSServer) handleReadAt(stream *smux.Stream) error {
 	reader := bytes.NewReader(buffer[:bytesRead])
 	if err := binarystream.SendDataFromReader(reader, int(bytesRead), stream); err != nil {
 		syslog.L.Error(err).WithMessage("failed sending data from reader via binary stream").Write()
+		return err
 	}
 
 	return nil

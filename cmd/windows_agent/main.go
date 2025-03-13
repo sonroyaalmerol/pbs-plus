@@ -16,6 +16,7 @@ import (
 
 	"github.com/kardianos/service"
 	unsafefs "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe"
+	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine"
 	"github.com/sonroyaalmerol/pbs-plus/internal/store/constants"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"golang.org/x/sys/windows"
@@ -27,6 +28,21 @@ var (
 	mutex  sync.Mutex
 	handle windows.Handle
 )
+
+func init() {
+	childgoroutine.Register("unsafefs_readat", func(args string) {
+		alloc, err := strconv.Atoi(args)
+		if err != nil {
+			alloc = 0
+		}
+		server := unsafefs.Initialize(uint32(alloc))
+		if server != nil {
+			if err := server.ServeReadAt(); err != nil {
+				log.Printf("error serving readat: %v", err)
+			}
+		}
+	})
+}
 
 // watchdogService wraps the original service and adds resilience
 type watchdogService struct {
@@ -113,26 +129,6 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-
-	if len(os.Args) > 1 && os.Args[1] == "__fs-unsafe" {
-		alloc := 0
-		if len(os.Args) > 2 {
-			var err error
-			alloc, err = strconv.Atoi(os.Args[2])
-			if err != nil {
-				alloc = 0
-			}
-		}
-
-		server := unsafefs.Initialize(uint32(alloc))
-		if server != nil {
-			if err := server.ServeReadAt(); err != nil {
-				log.Printf("error serving readat: %v", err)
-			}
-		}
-
-		os.Exit(0)
-	}
 
 	constants.Version = Version
 

@@ -10,7 +10,7 @@ import (
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/types"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/snapshots"
 	"github.com/sonroyaalmerol/pbs-plus/internal/arpc"
-	"github.com/sonroyaalmerol/pbs-plus/internal/arpc/forkcomm"
+	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"github.com/sonroyaalmerol/pbs-plus/internal/utils/idgen"
 	"github.com/sonroyaalmerol/pbs-plus/internal/utils/safemap"
@@ -21,7 +21,7 @@ type AgentFSServer struct {
 	ctxCancel        context.CancelFunc
 	jobId            string
 	snapshot         snapshots.Snapshot
-	unsafeExecutor   *forkcomm.Session
+	unsafeExecutor   *childgoroutine.Child
 	handleIdGen      *idgen.IDGenerator
 	handles          *safemap.Map[uint64, *FileHandle]
 	arpcRouter       *arpc.Router
@@ -37,15 +37,10 @@ func NewAgentFSServer(jobId string, snapshot snapshots.Snapshot) *AgentFSServer 
 		allocGranularity = 65536 // 64 KB usually
 	}
 
-	var child *forkcomm.Session
+	var child *childgoroutine.Child
 	if runtime.GOOS == "windows" {
-		currExec, err := os.Executable()
-		if err != nil {
-			cancel()
-			return nil
-		}
-
-		child, err = forkcomm.CreateChildProcess(ctx, currExec, []string{"__fs-unsafe", fmt.Sprintf("%d", allocGranularity)})
+		var err error
+		child, err = childgoroutine.Go("unsafefs_readat", fmt.Sprintf("%d", allocGranularity))
 		if err != nil {
 			cancel()
 			return nil
@@ -112,7 +107,8 @@ func (s *AgentFSServer) Close() {
 	}
 
 	if s.unsafeExecutor != nil {
-		s.unsafeExecutor.Close()
+		s.unsafeExecutor.Mux.Close()
+		s.unsafeExecutor.Process.Kill()
 	}
 
 	s.closeFileHandles()

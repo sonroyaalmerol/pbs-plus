@@ -328,17 +328,13 @@ func (s *AgentFSServer) handleReadAt(req arpc.Request) (arpc.Response, error) {
 	}
 
 	// Open a handle to the target process with the PROCESS_DUP_HANDLE right
-	targetProcess, err := windows.OpenProcess(
-		windows.PROCESS_DUP_HANDLE,
-		false,
-		uint32(s.unsafeExecutor.GetPID()),
-	)
+	targetProcess, err := s.unsafeExecutor.ProcessHandle()
 	if err != nil {
 		return arpc.Response{}, os.ErrInvalid
 	}
-	defer windows.CloseHandle(targetProcess)
 
 	var dupHandle windows.Handle
+
 	// Duplicate the handle from our process into the target process
 	err = windows.DuplicateHandle(
 		windows.CurrentProcess(),
@@ -353,7 +349,7 @@ func (s *AgentFSServer) handleReadAt(req arpc.Request) (arpc.Response, error) {
 		return arpc.Response{}, os.ErrInvalid
 	}
 
-	childStream, err := s.unsafeExecutor.Pipe.OpenStream()
+	childStream, err := s.unsafeExecutor.Mux.OpenStream()
 	if err != nil {
 		return arpc.Response{}, os.ErrInvalid
 	}
@@ -376,6 +372,8 @@ func (s *AgentFSServer) handleReadAt(req arpc.Request) (arpc.Response, error) {
 	streamCallback := func(stream *smux.Stream) {
 		// Ensure we free up resources once streaming is done.
 		defer func() {
+			windows.CloseHandle(targetProcess)
+			childStream.Close()
 			windows.CloseHandle(dupHandle)
 		}()
 
