@@ -20,6 +20,8 @@ import (
 	"github.com/sonroyaalmerol/pbs-plus/internal/arpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	_ "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe/register"
 )
 
 type latencyConn struct {
