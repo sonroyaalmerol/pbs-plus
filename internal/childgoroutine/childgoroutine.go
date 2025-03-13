@@ -5,11 +5,9 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine/cregistry"
 	"github.com/xtaci/smux"
 )
-
-// registry maps names to functions to run in the child process.
-var registry = make(map[string]func(string))
 
 // muxSession holds the smux session in child mode.
 var muxSession *smux.Session
@@ -19,13 +17,6 @@ var muxSession *smux.Session
 type Child struct {
 	Process *os.Process
 	Mux     *smux.Session
-}
-
-// Register makes a function available for running in a child process.
-// Because the child re‑executes your binary, registration must be done in both
-// parent and child.
-func Register(name string, f func(string)) {
-	registry[name] = f
 }
 
 // ---------------------------------------------------------------------
@@ -101,12 +92,12 @@ func runChildMode() {
 			}
 			muxSession = mux
 		}
-		fmt.Fprintf(os.Stderr, "child mode: registry keys: %+v\n", registry)
+		fmt.Fprintf(os.Stderr, "child mode: registry keys: %+v\n", cregistry.Entries)
 		if childName == "" {
 			fmt.Fprintln(os.Stderr, "child mode specified but no child name provided")
 			os.Exit(1)
 		}
-		f, ok := registry[childName]
+		f, ok := cregistry.Entries[childName]
 		if !ok {
 			fmt.Fprintf(os.Stderr, "no registered function for child name: %s\n", childName)
 			os.Exit(1)

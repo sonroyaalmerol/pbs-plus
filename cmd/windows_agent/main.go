@@ -4,22 +4,50 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/kardianos/service"
+	unsafefs "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe"
+	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine"
+	"github.com/sonroyaalmerol/pbs-plus/internal/childgoroutine/cregistry"
 	"github.com/sonroyaalmerol/pbs-plus/internal/store/constants"
 	"github.com/sonroyaalmerol/pbs-plus/internal/syslog"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
-
-	_ "github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/unsafe/register"
 )
+
+func init() {
+	// Add an entry for "unsafefs_readat" to the static registry.
+	cregistry.Entries["unsafefs_readat"] = func(args string) {
+		alloc, err := strconv.Atoi(args)
+		if err != nil {
+			alloc = 0
+		}
+		// Get the smux session (this will work when running in child mode).
+		session := childgoroutine.SMux()
+		if session == nil {
+			log.Printf("failed to obtain smux session")
+			return
+		}
+		// Initialize your unsafe FS server.
+		server := unsafefs.Initialize(session, uint32(alloc))
+		if server != nil {
+			if err := server.ServeReadAt(); err != nil {
+				log.Printf("error serving readat: %v", err)
+			}
+		} else {
+			log.Printf("unsafefs.Initialize returned nil")
+		}
+	}
+}
 
 var Version = "v0.0.0"
 var (
