@@ -115,7 +115,6 @@ func (p *agentService) run() {
 
 	if err := p.initializeDrives(); err != nil {
 		syslog.L.Error(err).WithMessage("failed to initializing drives").Write()
-		return
 	}
 
 	if err := p.connectARPC(); err != nil {
