@@ -3,7 +3,6 @@ package arpcdata
 import (
 	"encoding/binary"
 	"math"
-	"reflect"
 	"time"
 	"unsafe"
 )
