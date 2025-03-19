@@ -6,6 +6,7 @@ import (
 	"math"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 var DecoderPool = sync.Pool{
@@ -141,7 +142,8 @@ func (d *Decoder) ReadString() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	p := unsafe.SliceData(data)
+	return unsafe.String(p, len(data)), nil
 }
 
 func (d *Decoder) ReadBool() (bool, error) {

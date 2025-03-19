@@ -3,7 +3,9 @@ package arpcdata
 import (
 	"encoding/binary"
 	"math"
+	"reflect"
 	"time"
+	"unsafe"
 )
 
 // Encodable defines the interface for types that can be encoded.
@@ -121,7 +123,10 @@ func (e *Encoder) WriteBytes(data []byte) error {
 // Note: Converting a string to a []byte will allocate.
 // If you need to avoid that allocation as well, consider a different API.
 func (e *Encoder) WriteString(value string) error {
-	return e.WriteBytes([]byte(value))
+	p := unsafe.StringData(value)
+	b := unsafe.Slice(p, len(value))
+
+	return e.WriteBytes(b)
 }
 
 // WriteBool writes a boolean as a single byte (0 or 1).
