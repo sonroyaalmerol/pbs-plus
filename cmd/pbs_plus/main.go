@@ -13,8 +13,10 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
+	"github.com/pbnjay/memory"
 	"github.com/sonroyaalmerol/pbs-plus/internal/auth/certificates"
 	"github.com/sonroyaalmerol/pbs-plus/internal/auth/server"
 	"github.com/sonroyaalmerol/pbs-plus/internal/auth/token"
@@ -43,6 +45,11 @@ var Version = "v0.0.0"
 func main() {
 	mainCtx, mainCancel := context.WithCancel(context.Background())
 	defer mainCancel()
+
+	memLimit := memory.TotalMemory() / 2
+	debug.SetMemoryLimit(int64(memLimit))
+
+	syslog.L.Info().WithMessage(fmt.Sprintf("GOMEMLIMIT has been set to %d.", memLimit))
 
 	proxmox.InitializeProxmox()
 
