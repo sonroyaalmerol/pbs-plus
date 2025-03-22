@@ -109,12 +109,12 @@ func (s *AgentFSServer) openEFSFile(path string) (arpc.Response, error) {
 	var pvContext uintptr
 	utf16Path, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return arpc.Response{}, errors.Wrap(err, "UTF16 conversion failed")
+		return arpc.Response{}, mapWinError(err, "utf16Path")
 	}
 
 	// Single EFS open+read+close sequence
 	if err := OpenEncryptedFileRawW(utf16Path, CREATE_FOR_EXPORT, &pvContext); err != nil {
-		return arpc.Response{}, errors.Wrap(err, "EFS open failed")
+		return arpc.Response{}, mapWinError(err, "OpenEncryptedFileRawW")
 	}
 	defer CloseEncryptedFileRaw(pvContext)
 
@@ -122,7 +122,7 @@ func (s *AgentFSServer) openEFSFile(path string) (arpc.Response, error) {
 	callback := syscall.NewCallback(exportCallback)
 
 	if err := ReadEncryptedFileRaw(callback, uintptr(unsafe.Pointer(cbContext)), pvContext); err != nil {
-		return arpc.Response{}, errors.Wrap(err, "EFS read failed")
+		return arpc.Response{}, mapWinError(err, "ReadEncryptedFileRaw")
 	}
 
 	handleID := s.handleIdGen.NextID()
@@ -134,7 +134,7 @@ func (s *AgentFSServer) openEFSFile(path string) (arpc.Response, error) {
 	fhID := types.FileHandleId(handleID)
 	data, err := fhID.Encode()
 	if err != nil {
-		return arpc.Response{}, errors.Wrap(err, "handle ID encoding failed")
+		return arpc.Response{}, err
 	}
 	return arpc.Response{Status: 200, Data: data}, nil
 }
@@ -158,7 +158,7 @@ func (s *AgentFSServer) openRegularFile(path string) (arpc.Response, error) {
 	fileSize, isDir, err := getFileInfo(handle)
 	if err != nil {
 		windows.CloseHandle(handle)
-		return arpc.Response{}, errors.Wrap(err, "file info query failed")
+		return arpc.Response{}, mapWinError(err, "getFileInfo")
 	}
 
 	handleID := s.handleIdGen.NextID()
@@ -171,7 +171,8 @@ func (s *AgentFSServer) openRegularFile(path string) (arpc.Response, error) {
 	fhID := types.FileHandleId(handleID)
 	data, err := fhID.Encode()
 	if err != nil {
-		return arpc.Response{}, errors.Wrap(err, "handle ID encoding failed")
+		windows.CloseHandle(handle)
+		return arpc.Response{}, err
 	}
 	return arpc.Response{Status: 200, Data: data}, nil
 }
