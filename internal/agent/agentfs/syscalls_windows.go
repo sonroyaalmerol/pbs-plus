@@ -7,14 +7,24 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/pkg/errors"
 	"github.com/sonroyaalmerol/pbs-plus/internal/agent/agentfs/types"
 	"golang.org/x/sys/windows"
+)
+
+const (
+	CREATE_FOR_EXPORT = 0x00000001
 )
 
 var (
 	modkernel32          = windows.NewLazySystemDLL("kernel32.dll")
 	procGetDiskFreeSpace = modkernel32.NewProc("GetDiskFreeSpaceW")
 	procGetSystemInfo    = modkernel32.NewProc("GetSystemInfo")
+
+	modadvapi32               = windows.NewLazyDLL("advapi32.dll")
+	procOpenEncryptedFileRawW = modadvapi32.NewProc("OpenEncryptedFileRawW")
+	procReadEncryptedFileRaw  = modadvapi32.NewProc("ReadEncryptedFileRaw")
+	procCloseEncryptedFileRaw = modadvapi32.NewProc("CloseEncryptedFileRaw")
 )
 
 func getStatFS(driveLetter string) (types.StatFS, error) {
@@ -158,6 +168,20 @@ func getFileSize(handle windows.Handle) (int64, error) {
 
 	// Combine the high and low parts of the file size
 	return int64(fileInfo.FileSizeHigh)<<32 + int64(fileInfo.FileSizeLow), nil
+}
+
+func getFileInfo(handle windows.Handle) (fileSize int64, isDir bool, err error) {
+	var info FileStandardInfo
+	err = windows.GetFileInformationByHandleEx(
+		handle,
+		windows.FileStandardInfo,
+		(*byte)(unsafe.Pointer(&info)),
+		uint32(unsafe.Sizeof(info)),
+	)
+	if err != nil {
+		return 0, false, err
+	}
+	return info.EndOfFile, info.Directory, nil
 }
 
 type systemInfo struct {
@@ -309,4 +333,83 @@ func GetWinACLs(filePath string) (string, string, []types.WinACL, error) {
 		winAcls = append(winAcls, ace)
 	}
 	return owner, group, winAcls, nil
+}
+
+type exportCallbackContext struct {
+	data []byte
+	err  error
+}
+
+// exportCallback processes data chunks from ReadEncryptedFileRaw.
+func exportCallback(pvCallbackContext uintptr, ulReason uint32, pvContext uintptr, ulBufferLength uint32, pBuffer uintptr) uintptr {
+	context := (*exportCallbackContext)(unsafe.Pointer(pvCallbackContext))
+	switch ulReason {
+	case 0: // EXPORT_CALLBACK
+		if ulBufferLength > 0 {
+			data := make([]byte, ulBufferLength)
+			copy(data, (*[1 << 30]byte)(unsafe.Pointer(pBuffer))[:ulBufferLength:ulBufferLength])
+			context.data = append(context.data, data...)
+		}
+	case 1: // ERROR_CALLBACK
+		context.err = fmt.Errorf("error during ReadEncryptedFileRaw")
+	}
+	return 0
+}
+
+// OpenEncryptedFileRawW wraps the Windows API using Call
+func OpenEncryptedFileRawW(fileName *uint16, flags uint32, pvContext *uintptr) error {
+	r1, _, err := procOpenEncryptedFileRawW.Call(
+		uintptr(unsafe.Pointer(fileName)),
+		uintptr(flags),
+		uintptr(unsafe.Pointer(pvContext)),
+	)
+	if r1 == 0 { // Function returns BOOL (0 = failure)
+		return err
+	}
+	return nil
+}
+
+// ReadEncryptedFileRaw wraps the Windows API using Call
+func ReadEncryptedFileRaw(exportCallback uintptr, pvCallbackContext uintptr, pvContext uintptr) error {
+	r1, _, err := procReadEncryptedFileRaw.Call(
+		exportCallback,
+		pvCallbackContext,
+		pvContext,
+	)
+	if r1 == 0 { // Function returns BOOL (0 = failure)
+		return err
+	}
+	return nil
+}
+
+// CloseEncryptedFileRaw wraps the Windows API using Call
+func CloseEncryptedFileRaw(pvContext uintptr) error {
+	r1, _, err := procCloseEncryptedFileRaw.Call(pvContext)
+	if r1 == 0 { // Function returns BOOL (0 = failure)
+		return err
+	}
+	return nil
+}
+
+func isFileEncrypted(path string) (bool, error) {
+	var info windows.ByHandleFileInformation
+	handle, err := windows.CreateFile(
+		windows.StringToUTF16Ptr(path),
+		windows.GENERIC_READ,
+		windows.FILE_SHARE_READ,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS,
+		0,
+	)
+	if err != nil {
+		return false, mapWinError(err, "encryption check open")
+	}
+	defer windows.CloseHandle(handle)
+
+	if err := windows.GetFileInformationByHandle(handle, &info); err != nil {
+		return false, errors.Wrap(err, "encryption attribute check")
+	}
+
+	return (info.FileAttributes & windows.FILE_ATTRIBUTE_ENCRYPTED) != 0, nil
 }
