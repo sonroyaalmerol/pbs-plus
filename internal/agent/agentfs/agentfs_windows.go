@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"unsafe"
 
 	"github.com/Microsoft/go-winio"
@@ -24,6 +25,7 @@ type FileHandle struct {
 	handle   windows.Handle
 	fileSize int64
 	isDir    bool
+	efsData  []byte
 }
 
 type FileStandardInfo struct {
@@ -73,69 +75,92 @@ func (s *AgentFSServer) handleOpenFile(req arpc.Request) (arpc.Response, error) 
 		return arpc.Response{}, err
 	}
 
-	// Disallow write operations.
-	if payload.Flag&(os.O_WRONLY|os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_TRUNC) != 0 {
-		errStr := arpc.StringMsg("write operations not allowed")
-		errBytes, err := errStr.Encode()
-		if err != nil {
-			return arpc.Response{}, err
-		}
-		return arpc.Response{
-			Status: 403,
-			Data:   errBytes,
-		}, nil
-	}
-
 	path, err := s.abs(payload.Path)
 	if err != nil {
 		return arpc.Response{}, err
 	}
 
-	// Check file status to mark directories.
-	stat, err := os.Stat(path)
+	isEncrypted, err := isFileEncrypted(path)
 	if err != nil {
 		return arpc.Response{}, err
 	}
 
+	if isEncrypted {
+		return s.openEFSFile(path)
+	}
+	return s.openRegularFile(path)
+}
+
+// Dedicated EFS handler
+func (s *AgentFSServer) openEFSFile(path string) (arpc.Response, error) {
+	var pvContext uintptr
+	utf16Path, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return arpc.Response{}, errors.Wrap(err, "UTF16 conversion failed")
+	}
+
+	// Single EFS open+read+close sequence
+	if err := OpenEncryptedFileRawW(utf16Path, CREATE_FOR_EXPORT, &pvContext); err != nil {
+		return arpc.Response{}, errors.Wrap(err, "EFS open failed")
+	}
+	defer CloseEncryptedFileRaw(pvContext)
+
+	cbContext := &exportCallbackContext{data: make([]byte, 0)}
+	callback := syscall.NewCallback(exportCallback)
+
+	if err := ReadEncryptedFileRaw(callback, uintptr(unsafe.Pointer(cbContext)), pvContext); err != nil {
+		return arpc.Response{}, errors.Wrap(err, "EFS read failed")
+	}
+
+	handleID := s.handleIdGen.NextID()
+	s.handles.Set(handleID, &FileHandle{
+		efsData:  cbContext.data,
+		fileSize: int64(len(cbContext.data)),
+	})
+
+	fhID := types.FileHandleId(handleID)
+	data, err := fhID.Encode()
+	if err != nil {
+		return arpc.Response{}, errors.Wrap(err, "handle ID encoding failed")
+	}
+	return arpc.Response{Status: 200, Data: data}, nil
+}
+
+// Regular file handler
+func (s *AgentFSServer) openRegularFile(path string) (arpc.Response, error) {
 	handle, err := windows.CreateFile(
 		windows.StringToUTF16Ptr(path),
 		windows.GENERIC_READ,
 		windows.FILE_SHARE_READ,
 		nil,
 		windows.OPEN_EXISTING,
-		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_SEQUENTIAL_SCAN|windows.FILE_FLAG_OVERLAPPED,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_SEQUENTIAL_SCAN,
 		0,
 	)
 	if err != nil {
-		return arpc.Response{}, err
+		return arpc.Response{}, mapWinError(err, "CreateFile")
 	}
 
-	fileSize, err := getFileSize(handle)
+	// Get all needed info in one syscall
+	fileSize, isDir, err := getFileInfo(handle)
 	if err != nil {
 		windows.CloseHandle(handle)
-		return arpc.Response{}, err
+		return arpc.Response{}, errors.Wrap(err, "file info query failed")
 	}
 
-	handleId := s.handleIdGen.NextID()
-	fh := &FileHandle{
+	handleID := s.handleIdGen.NextID()
+	s.handles.Set(handleID, &FileHandle{
 		handle:   handle,
 		fileSize: fileSize,
-		isDir:    stat.IsDir(),
-	}
-	s.handles.Set(handleId, fh)
+		isDir:    isDir,
+	})
 
-	// Return the handle ID to the client.
-	fhId := types.FileHandleId(handleId)
-	dataBytes, err := fhId.Encode()
+	fhID := types.FileHandleId(handleID)
+	data, err := fhID.Encode()
 	if err != nil {
-		windows.CloseHandle(handle)
-		return arpc.Response{}, err
+		return arpc.Response{}, errors.Wrap(err, "handle ID encoding failed")
 	}
-
-	return arpc.Response{
-		Status: 200,
-		Data:   dataBytes,
-	}, nil
+	return arpc.Response{Status: 200, Data: data}, nil
 }
 
 func (s *AgentFSServer) handleAttr(req arpc.Request) (arpc.Response, error) {
@@ -315,6 +340,37 @@ func (s *AgentFSServer) handleReadAt(req arpc.Request) (arpc.Response, error) {
 		return arpc.Response{}, os.ErrInvalid
 	}
 
+	// Check if it's an EFS handle
+	if fh.efsData != nil {
+		return s.readEFSFile(&payload, fh)
+	}
+
+	return s.readRegularFile(&payload, fh)
+}
+
+func (s *AgentFSServer) readEFSFile(payload *types.ReadAtReq, fh *FileHandle) (arpc.Response, error) {
+	if payload.Offset < 0 || payload.Offset >= int64(len(fh.efsData)) {
+		return arpc.Response{}, io.EOF
+	}
+	end := payload.Offset + int64(payload.Length)
+	if end > int64(len(fh.efsData)) {
+		end = int64(len(fh.efsData))
+		payload.Length = int(end - payload.Offset)
+	}
+	data := fh.efsData[payload.Offset:end]
+	reader := bytes.NewReader(data)
+	streamCallback := func(stream *smux.Stream) {
+		if err := binarystream.SendDataFromReader(reader, payload.Length, stream); err != nil {
+			syslog.L.Error(err).WithMessage("failed sending EFS data via binary stream").Write()
+		}
+	}
+	return arpc.Response{
+		Status:    213,
+		RawStream: streamCallback,
+	}, nil
+}
+
+func (s *AgentFSServer) readRegularFile(payload *types.ReadAtReq, fh *FileHandle) (arpc.Response, error) {
 	// If the requested offset is at or beyond EOF, stream nothing.
 	if payload.Offset >= fh.fileSize {
 		emptyReader := bytes.NewReader([]byte{})
@@ -516,7 +572,9 @@ func (s *AgentFSServer) handleClose(req arpc.Request) (arpc.Response, error) {
 	}
 
 	// Close the Windows handle directly
-	windows.CloseHandle(handle.handle)
+	if handle.handle != windows.InvalidHandle {
+		windows.CloseHandle(handle.handle)
+	}
 	s.handles.Del(uint64(payload.HandleID))
 
 	closed := arpc.StringMsg("closed")
