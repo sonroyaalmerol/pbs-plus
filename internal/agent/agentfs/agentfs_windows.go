@@ -75,6 +75,19 @@ func (s *AgentFSServer) handleOpenFile(req arpc.Request) (arpc.Response, error) 
 		return arpc.Response{}, err
 	}
 
+	// Disallow write operations.
+	if payload.Flag&(os.O_WRONLY|os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_TRUNC) != 0 {
+		errStr := arpc.StringMsg("write operations not allowed")
+		errBytes, err := errStr.Encode()
+		if err != nil {
+			return arpc.Response{}, err
+		}
+		return arpc.Response{
+			Status: 403,
+			Data:   errBytes,
+		}, nil
+	}
+
 	path, err := s.abs(payload.Path)
 	if err != nil {
 		return arpc.Response{}, err
